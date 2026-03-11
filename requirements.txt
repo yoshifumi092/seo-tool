@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+playwright
+pymupdf
+groq
+python-multipart
+aiofiles

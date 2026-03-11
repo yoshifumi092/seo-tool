@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SEO削除申請ツール</title>
+  <style>
+    :root {
+      --red:    #c0392b;
+      --red-lt: #f9ebea;
+      --red-dk: #922b21;
+      --navy:   #1a2940;
+      --gray:   #f4f6f8;
+      --border: #dde1e7;
+      --text:   #1e2328;
+      --muted:  #6b7280;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Hiragino Kaku Gothic Pro", "Yu Gothic", "Meiryo", "Noto Sans JP", sans-serif;
+      background: var(--gray);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    header {
+      background: var(--navy);
+      color: #fff;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    header .icon { font-size: 28px; }
+    header h1 { font-size: 20px; font-weight: 700; }
+    header p  { font-size: 12px; color: #aab4c4; margin-top: 2px; }
+
+    main {
+      max-width: 960px;
+      margin: 32px auto;
+      padding: 0 16px 60px;
+    }
+
+    .card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 28px 32px;
+      margin-bottom: 20px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.05);
+    }
+    .card h2 {
+      font-size: 15px;
+      color: var(--navy);
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .card h2 .step-badge {
+      background: var(--red);
+      color: #fff;
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-weight: 600;
+    }
+
+    .form-group { margin-bottom: 14px; }
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .form-group input[type="text"],
+    .form-group input[type="url"] {
+      width: 100%;
+      padding: 10px 14px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      transition: border-color .2s;
+      outline: none;
+    }
+    .form-group input:focus { border-color: var(--red); }
+    .form-group .hint { font-size: 11px; color: var(--muted); margin-top: 4px; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 22px;
+      border: none;
+      border-radius: 6px;
+      font-size: 14px;
+      font-family: inherit;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .2s, transform .1s;
+    }
+    .btn:active { transform: scale(.98); }
+    .btn-primary { background: var(--red); color: #fff; }
+    .btn-primary:hover { background: var(--red-dk); }
+    .btn-primary:disabled { background: #ccc; cursor: not-allowed; transform: none; }
+    .btn-success { background: #1a7f4b; color: #fff; }
+    .btn-success:hover { background: #145e38; }
+    .btn-success:disabled { background: #ccc; cursor: not-allowed; }
+    .btn-secondary { background: #555; color: #fff; }
+    .btn-secondary:hover { background: #333; }
+
+    #loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      padding: 40px 0;
+    }
+    .spinner {
+      width: 44px; height: 44px;
+      border: 4px solid #f0d0ce;
+      border-top-color: var(--red);
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loading-msg { font-size: 14px; color: var(--muted); }
+
+    #results { display: none; }
+
+    .trademark-box {
+      background: var(--red-lt);
+      border: 1px solid #f1b9b5;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .trademark-box label { font-size: 13px; font-weight: 700; color: var(--red-dk); white-space: nowrap; }
+    .trademark-box input {
+      flex: 1; min-width: 200px;
+      padding: 8px 12px;
+      border: 1px solid #e8a9a5;
+      border-radius: 5px;
+      font-size: 14px;
+      font-family: inherit;
+      background: #fff;
+    }
+    .trademark-box input:focus { outline: none; border-color: var(--red); }
+    .trademark-note { font-size: 11px; color: #a04040; width: 100%; margin-top: -6px; }
+
+    .violations-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .violations-header span { font-size: 13px; font-weight: 700; color: var(--navy); }
+    .count-badge {
+      background: var(--red);
+      color: #fff;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 2px 9px;
+      border-radius: 20px;
+    }
+
+    .violation-item {
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 12px 15px;
+      margin-bottom: 10px;
+      background: #fff;
+      border-left: 4px solid var(--red);
+    }
+    .violation-item:hover { background: #fff9f9; }
+    .violation-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .violation-num {
+      background: var(--red); color: #fff;
+      font-size: 11px; font-weight: 700;
+      padding: 2px 7px; border-radius: 4px; white-space: nowrap;
+    }
+    .violation-type {
+      font-size: 12px; font-weight: 700;
+      color: var(--red-dk); background: var(--red-lt);
+      padding: 2px 8px; border-radius: 4px;
+    }
+    .violation-text {
+      font-size: 12px; color: #444;
+      background: #f8f8f8; border: 1px solid #eee;
+      border-radius: 4px; padding: 6px 10px;
+      margin-bottom: 6px; font-style: italic; word-break: break-all;
+    }
+    .violation-explanation { font-size: 12px; color: #555; line-height: 1.6; }
+
+    .generate-area {
+      text-align: center;
+      padding-top: 10px;
+      border-top: 1px solid var(--border);
+      margin-top: 20px;
+    }
+    .generate-area .note { font-size: 11px; color: var(--muted); margin-top: 8px; }
+
+    .error-box {
+      background: #fff0f0; border: 1px solid #f5c6c6;
+      border-radius: 7px; padding: 14px 18px;
+      color: #c0392b; font-size: 13px;
+      display: none; margin-bottom: 16px;
+    }
+    #success-banner {
+      display: none;
+      background: #eafaf1; border: 1px solid #a9dfbf;
+      border-radius: 7px; padding: 14px 18px;
+      color: #1a7f4b; font-size: 13px;
+      font-weight: 600; text-align: center; margin-bottom: 16px;
+    }
+    #article-title-display { font-size: 13px; color: var(--muted); margin-bottom: 16px; }
+    #article-title-display strong { color: var(--text); }
+
+    .violations-list { max-height: 500px; overflow-y: auto; padding-right: 4px; }
+    .violations-list::-webkit-scrollbar { width: 5px; }
+    .violations-list::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
+
+    /* ── STEP 3 エディター ── */
+    #card-step3 { max-width: 1200px; padding: 24px 28px; }
+
+    .editor-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+      background: #f5f7fa;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
+    }
+    #mode-info { flex: 1; font-size: 13px; color: var(--muted); }
+    .toolbar-actions { display: flex; gap: 10px; }
+
+    .btn-mode { background: #555; color: #fff; }
+    .btn-mode:hover { background: #333; }
+    .btn-mode.active { background: #c47000; }
+
+    .editor-layout { display: flex; gap: 20px; }
+
+    .editor-left {
+      flex: 1; min-width: 0;
+      max-height: 80vh;
+      overflow-y: auto;
+      background: #e8e8e8;
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .editor-left::-webkit-scrollbar { width: 6px; }
+    .editor-left::-webkit-scrollbar-thumb { background: #bbb; border-radius: 3px; }
+
+    .page-wrapper {
+      position: relative;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      border-radius: 3px;
+      overflow: hidden;
+      background: #fff;
+      user-select: none;
+    }
+    .page-wrapper img { display: block; width: 100%; }
+    .page-wrapper canvas {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+    }
+    .page-wrapper canvas.interactive {
+      pointer-events: auto;
+    }
+    .page-label {
+      position: absolute; bottom: 6px; right: 8px;
+      background: rgba(0,0,0,0.45);
+      color: #fff; font-size: 11px;
+      padding: 2px 7px; border-radius: 3px;
+      pointer-events: none;
+    }
+
+    .editor-right { width: 300px; flex-shrink: 0; }
+
+    .editor-violation-list {
+      max-height: calc(80vh - 50px);
+      overflow-y: auto;
+      padding-right: 2px;
+    }
+    .editor-violation-list::-webkit-scrollbar { width: 5px; }
+    .editor-violation-list::-webkit-scrollbar-thumb { background: #ddd; border-radius: 3px; }
+
+    .editor-v-item {
+      position: relative;
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 10px 34px 10px 12px;
+      margin-bottom: 8px;
+      background: #fff;
+      border-left: 4px solid var(--red);
+      font-size: 12px;
+    }
+    .editor-v-item:hover { background: #fff9f9; }
+    .editor-v-del {
+      position: absolute; top: 8px; right: 8px;
+      width: 22px; height: 22px;
+      border: none; border-radius: 50%;
+      background: #e74c3c; color: #fff;
+      font-size: 12px; font-weight: bold;
+      cursor: pointer; line-height: 22px; text-align: center;
+      opacity: 0.7; padding: 0;
+    }
+    .editor-v-del:hover { opacity: 1; }
+    .editor-v-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; flex-wrap: wrap; }
+    .editor-v-text { font-style: italic; color: #555; margin-bottom: 4px; word-break: break-all; }
+    .editor-v-exp { color: #444; line-height: 1.5; }
+
+    #adding-indicator {
+      padding: 10px 12px;
+      background: #fff8e1;
+      border: 1px solid #ffe082;
+      border-radius: 6px;
+      font-size: 12px;
+      color: #7a5c00;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .mini-spinner {
+      width: 16px; height: 16px;
+      border: 2px solid #ffd;
+      border-top-color: #c47000;
+      border-radius: 50%;
+      animation: spin .6s linear infinite;
+      flex-shrink: 0;
+    }
+
+    /* 注釈テキストオーバーレイ */
+    .ann-label {
+      position: absolute;
+      background: #fff;
+      border: 1.5px solid #b00000;
+      border-radius: 3px;
+      padding: 4px 22px 4px 6px;
+      font-size: 10px;
+      line-height: 1.35;
+      max-width: 200px;
+      min-width: 130px;
+      cursor: grab;
+      user-select: none;
+      z-index: 10;
+      box-shadow: 1px 1px 4px rgba(0,0,0,0.18);
+      pointer-events: auto;
+    }
+    .ann-label:active { cursor: grabbing; }
+    .ann-label .ann-title {
+      font-weight: 700;
+      color: #b00000;
+      font-size: 10px;
+      margin-bottom: 2px;
+      word-break: break-all;
+    }
+    .ann-label .ann-body {
+      color: #333;
+      font-size: 9px;
+      word-break: break-all;
+    }
+    .ann-edit-btn {
+      position: absolute;
+      top: 3px; right: 3px;
+      width: 17px; height: 17px;
+      border: none; border-radius: 3px;
+      background: #f5e6e6; color: #b00000;
+      font-size: 10px; line-height: 17px;
+      text-align: center; cursor: pointer;
+      padding: 0; opacity: 0.7;
+    }
+    .ann-edit-btn:hover { opacity: 1; background: #f1b9b5; }
+    .ann-edit-form {
+      display: none;
+      margin-top: 5px;
+      border-top: 1px solid #f0c0c0;
+      padding-top: 5px;
+    }
+    .ann-edit-form.open { display: block; }
+    .ann-edit-form input,
+    .ann-edit-form textarea {
+      width: 100%; font-size: 10px; font-family: inherit;
+      border: 1px solid #ccc; border-radius: 3px;
+      padding: 3px 5px; margin-bottom: 3px; outline: none;
+      cursor: text;
+    }
+    .ann-edit-form input:focus,
+    .ann-edit-form textarea:focus { border-color: #b00000; }
+    .ann-edit-form textarea { resize: vertical; min-height: 48px; }
+    .ann-edit-btns { display: flex; gap: 4px; }
+    .ann-btn-save {
+      flex: 1; background: #b00000; color: #fff;
+      border: none; border-radius: 3px; font-size: 10px;
+      padding: 3px 0; cursor: pointer;
+    }
+    .ann-btn-save:hover { background: #8a0000; }
+    .ann-btn-cancel {
+      flex: 1; background: #eee; color: #555;
+      border: none; border-radius: 3px; font-size: 10px;
+      padding: 3px 0; cursor: pointer;
+    }
+    .ann-btn-cancel:hover { background: #ddd; }
+
+    /* 編集UI */
+    .editor-v-edit-btn {
+      position: absolute; bottom: 8px; right: 8px;
+      padding: 2px 8px;
+      border: 1px solid #bbb; border-radius: 4px;
+      background: #f5f5f5; color: #555;
+      font-size: 11px; cursor: pointer;
+    }
+    .editor-v-edit-btn:hover { background: #e8e8e8; }
+
+    .editor-v-edit-area {
+      display: none;
+      margin-top: 8px;
+      border-top: 1px solid #eee;
+      padding-top: 8px;
+    }
+    .editor-v-edit-area.open { display: block; }
+    .editor-v-edit-area label {
+      display: block; font-size: 11px; color: #888;
+      margin-bottom: 3px; margin-top: 6px;
+    }
+    .editor-v-edit-area input,
+    .editor-v-edit-area textarea {
+      width: 100%; font-size: 12px; font-family: inherit;
+      border: 1px solid #ccc; border-radius: 4px;
+      padding: 5px 8px; outline: none;
+    }
+    .editor-v-edit-area input:focus,
+    .editor-v-edit-area textarea:focus { border-color: var(--red); }
+    .editor-v-edit-area textarea { resize: vertical; min-height: 64px; }
+    .editor-v-edit-btns { display: flex; gap: 6px; margin-top: 8px; }
+    .btn-save { background: var(--red); color: #fff; padding: 4px 12px; border: none; border-radius: 4px; font-size: 12px; cursor: pointer; }
+    .btn-save:hover { background: var(--red-dk); }
+    .btn-cancel { background: #eee; color: #555; padding: 4px 12px; border: none; border-radius: 4px; font-size: 12px; cursor: pointer; }
+    .btn-cancel:hover { background: #ddd; }
+  </style>
+</head>
+<body>
+
+<header>
+  <span class="icon">📄</span>
+  <div>
+    <h1>SEO削除申請ツール</h1>
+    <p>ネガティブ記事の削除申請書類（グレースケール＋赤枠注釈PDF）を自動生成します</p>
+  </div>
+</header>
+
+<main>
+  <div class="error-box" id="error-box"></div>
+  <div id="success-banner">✅ PDFの生成が完了しました。ダウンロードが開始されます。</div>
+
+  <!-- STEP 1 -->
+  <div class="card" id="card-step1">
+    <h2><span class="step-badge">STEP 1</span> 記事URLを入力して解析</h2>
+    <div class="form-group">
+      <label>記事のURL *</label>
+      <input type="url" id="url-input" placeholder="https://example.com/negative-article" autocomplete="off" spellcheck="false">
+    </div>
+    <div class="form-group">
+      <label>商標名（オプション）</label>
+      <input type="text" id="trademark-input" placeholder="空白のままにすると自動検出します">
+      <p class="hint">対象の商標・ブランド・会社名を入力すると精度が上がります</p>
+    </div>
+    <button class="btn btn-primary" id="analyze-btn" onclick="startAnalyze()">🔍 解析する</button>
+  </div>
+
+  <!-- ローディング -->
+  <div class="card" id="loading" style="display:none;">
+    <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:30px 0;">
+      <div class="spinner"></div>
+      <p id="loading-msg">URLをPDF化しています...</p>
+    </div>
+  </div>
+
+  <!-- STEP 2 -->
+  <div class="card" id="results">
+    <h2><span class="step-badge">STEP 2</span> 解析結果を確認</h2>
+    <p id="article-title-display"></p>
+    <div class="trademark-box">
+      <label>🔖 侵害商標：</label>
+      <input type="text" id="confirmed-trademark" placeholder="商標名を入力">
+      <p class="trademark-note">AIが自動検出しました。誤りがある場合は修正してからPDF生成してください。</p>
+    </div>
+    <div class="violations-header">
+      <span>🚨 指摘事項</span>
+      <span class="count-badge" id="violations-count">0 件</span>
+    </div>
+    <div class="violations-list" id="violations-list"></div>
+    <div class="generate-area">
+      <button class="btn btn-primary" id="enter-editor-btn" onclick="enterEditor()">✏️ 編集画面へ進む</button>
+      <p class="note">PDF上で指摘箇所の追加・削除ができます</p>
+    </div>
+  </div>
+
+  <!-- STEP 3 エディター -->
+  <div class="card" id="card-step3" style="display:none;">
+    <h2><span class="step-badge">STEP 3</span> 指摘箇所を編集してPDFを生成</h2>
+
+    <div class="editor-toolbar">
+      <span id="mode-info">🖱️ 赤い枠をクリックで削除 ／ テキストラベルをドラッグで移動できます</span>
+      <div class="toolbar-actions">
+        <button class="btn btn-mode" id="toggle-mode-btn" onclick="toggleDrawMode()">✏️ 追加モード</button>
+        <button class="btn btn-success" id="editor-download-btn" onclick="downloadPDF()">📥 PDFダウンロード</button>
+      </div>
+    </div>
+
+    <div class="editor-layout">
+      <div class="editor-left" id="editor-pages">
+        <p style="padding:20px;color:#888;text-align:center;">ページを読み込み中...</p>
+      </div>
+      <div class="editor-right">
+        <div class="violations-header">
+          <span>🚨 指摘事項</span>
+          <span class="count-badge" id="editor-violations-count">0 件</span>
+        </div>
+        <div class="editor-violation-list" id="editor-violation-list"></div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<script>
+let currentSessionId = null;
+let lastAnalyzeData = null;
+
+const editor = {
+  sessionId: null,
+  trademark: "",
+  violations: [],
+  pageCount: 0,
+  pageDims: [],
+  pages: [],       // {imgEl, canvasEl, wrapEl, pdfW, pdfH, loaded}
+  drawMode: false,
+  isDrawing: false,
+  drawPageIdx: null,
+  drawStart: null,
+  isResizing: false,
+  resizeInfo: null,   // { violationIdx, handle, origRect, pageIdx }
+};
+
+// ── ユーティリティ ──
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+function showError(msg) {
+  const box = document.getElementById("error-box");
+  box.textContent = "⚠️ " + msg;
+  box.style.display = "block";
+  setTimeout(() => { box.style.display = "none"; }, 8000);
+}
+
+function setLoading(visible, msg = "") {
+  document.getElementById("loading").style.display = visible ? "block" : "none";
+  if (msg) document.getElementById("loading-msg").textContent = msg;
+}
+
+function setStep1Enabled(enabled) {
+  document.getElementById("analyze-btn").disabled = !enabled;
+  document.getElementById("url-input").disabled = !enabled;
+  document.getElementById("trademark-input").disabled = !enabled;
+}
+
+// ── STEP 1 ──
+
+async function startAnalyze() {
+  const url = document.getElementById("url-input").value.trim();
+  const trademark = document.getElementById("trademark-input").value.trim();
+
+  if (!url) { showError("URLを入力してください。"); return; }
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    showError("http:// または https:// で始まるURLを入力してください。");
+    return;
+  }
+
+  document.getElementById("error-box").style.display = "none";
+  document.getElementById("results").style.display = "none";
+  document.getElementById("card-step3").style.display = "none";
+  document.getElementById("success-banner").style.display = "none";
+  setStep1Enabled(false);
+  setLoading(true, "URLをPDF化しています... (30秒ほどかかります)");
+
+  const msgTimer = setTimeout(() => {
+    document.getElementById("loading-msg").textContent = "AIが記事を解析しています... (さらに30秒ほど)";
+  }, 15000);
+
+  try {
+    const res = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url, trademark }),
+    });
+    clearTimeout(msgTimer);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || "解析に失敗しました。");
+    }
+    const data = await res.json();
+    currentSessionId = data.session_id;
+    lastAnalyzeData = data;
+    renderResults(data);
+  } catch (e) {
+    clearTimeout(msgTimer);
+    showError(e.message || "不明なエラーが発生しました。");
+  } finally {
+    setLoading(false);
+    setStep1Enabled(true);
+  }
+}
+
+// ── STEP 2 ──
+
+function renderResults(data) {
+  const titleEl = document.getElementById("article-title-display");
+  if (data.article_title) {
+    titleEl.innerHTML = `記事タイトル：<strong>${escapeHtml(data.article_title)}</strong>`;
+  }
+  document.getElementById("confirmed-trademark").value = data.trademark || "";
+
+  const list = document.getElementById("violations-list");
+  list.innerHTML = "";
+  const violations = data.violations || [];
+  document.getElementById("violations-count").textContent = violations.length + " 件";
+
+  if (violations.length === 0) {
+    list.innerHTML = '<p style="color:#888;font-size:13px;padding:10px 0;">指摘箇所が検出されませんでした。</p>';
+  } else {
+    violations.forEach((v, i) => {
+      const item = document.createElement("div");
+      item.className = "violation-item";
+      item.innerHTML = `
+        <div class="violation-meta">
+          <span class="violation-num">【${i + 1}】</span>
+          <span class="violation-type">${escapeHtml(v.type)}</span>
+        </div>
+        <div class="violation-text">${escapeHtml(v.text)}</div>
+        <div class="violation-explanation">${escapeHtml(v.explanation)}</div>
+      `;
+      list.appendChild(item);
+    });
+  }
+
+  document.getElementById("results").style.display = "block";
+  document.getElementById("results").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+// ── STEP 3: エディター起動 ──
+
+async function enterEditor() {
+  const trademark = document.getElementById("confirmed-trademark").value.trim();
+  if (!trademark) { showError("商標名を入力してください。"); return; }
+  if (!lastAnalyzeData) { showError("先に解析を実行してください。"); return; }
+
+  editor.sessionId = currentSessionId;
+  editor.trademark = trademark;
+  editor.violations = JSON.parse(JSON.stringify(lastAnalyzeData.violations || []));
+  editor.pageCount = lastAnalyzeData.page_count || 1;
+  editor.pageDims = lastAnalyzeData.page_dims || [];
+  editor.pages = [];
+  editor.drawMode = false;
+
+  const step3 = document.getElementById("card-step3");
+  step3.style.display = "block";
+  step3.scrollIntoView({ behavior: "smooth", block: "start" });
+
+  renderEditorViolationList();
+  await loadEditorPages();
+}
+
+// ── ページ読み込み ──
+
+async function loadEditorPages() {
+  const container = document.getElementById("editor-pages");
+  container.innerHTML = "";
+  editor.pages = [];
+
+  for (let i = 0; i < editor.pageCount; i++) {
+    const wrap = document.createElement("div");
+    wrap.className = "page-wrapper";
+
+    const img = document.createElement("img");
+    img.alt = `ページ ${i + 1}`;
+
+    const canvas = document.createElement("canvas");
+
+    const label = document.createElement("div");
+    label.className = "page-label";
+    label.textContent = `${i + 1} / ${editor.pageCount}`;
+
+    wrap.appendChild(img);
+    wrap.appendChild(canvas);
+    wrap.appendChild(label);
+    container.appendChild(wrap);
+
+    const pdfW = (editor.pageDims[i] || {}).w || 595;
+    const pdfH = (editor.pageDims[i] || {}).h || 842;
+    editor.pages.push({ imgEl: img, canvasEl: canvas, wrapEl: wrap, pdfW, pdfH, loaded: false });
+  }
+
+  // 全ページ並列読み込み
+  await Promise.all(editor.pages.map((_, i) => loadPageImage(i)));
+}
+
+function loadPageImage(pageIdx) {
+  return new Promise((resolve) => {
+    const pi = editor.pages[pageIdx];
+    pi.imgEl.onload = () => {
+      pi.loaded = true;
+      pi.canvasEl.classList.add("interactive");
+      setupCanvasEvents(pageIdx);
+      redrawCanvas(pageIdx);
+      renderAnnotationLabels(pageIdx);
+      resolve();
+    };
+    pi.imgEl.onerror = () => { resolve(); };
+    pi.imgEl.src = `/api/preview/${editor.sessionId}/${pageIdx}`;
+  });
+}
+
+// ── 座標変換 ──
+
+function getCanvasCoords(e, canvas) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    bx: (e.clientX - rect.left) * (canvas.width / rect.width),
+    by: (e.clientY - rect.top)  * (canvas.height / rect.height),
+  };
+}
+
+function pdfToBrowser(px, py, pi) {
+  return {
+    bx: px * pi.canvasEl.width  / pi.pdfW,
+    by: py * pi.canvasEl.height / pi.pdfH,
+  };
+}
+
+function browserToPdf(bx, by, pi) {
+  return [
+    bx * pi.pdfW / pi.canvasEl.width,
+    by * pi.pdfH / pi.canvasEl.height,
+  ];
+}
+
+// ── キャンバス描画 ──
+
+function redrawCanvas(pageIdx, preview) {
+  const pi = editor.pages[pageIdx];
+  if (!pi || !pi.loaded) return;
+
+  const canvas = pi.canvasEl;
+  const img = pi.imgEl;
+  canvas.width  = img.clientWidth;
+  canvas.height = img.clientHeight;
+  if (canvas.width === 0) return;
+
+  const ctx = canvas.getContext("2d");
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  for (const v of editor.violations) {
+    if (v.page_num !== pageIdx || !v.rect) continue;
+    const [x0, y0, x1, y1] = v.rect;
+    const b0 = pdfToBrowser(x0, y0, pi);
+    const b1 = pdfToBrowser(x1, y1, pi);
+    const w = b1.bx - b0.bx, h = b1.by - b0.by;
+
+    ctx.strokeStyle = "rgba(204,0,0,0.9)";
+    ctx.lineWidth = 2.5;
+    ctx.strokeRect(b0.bx, b0.by, w, h);
+    ctx.fillStyle = "rgba(204,0,0,0.06)";
+    ctx.fillRect(b0.bx, b0.by, w, h);
+
+    // 番号ラベル（ブラウザ編集時のみ表示）
+    const label = `【${v.number}】`;
+    ctx.font = "bold 12px sans-serif";
+    const tw = ctx.measureText(label).width + 6;
+    const th = 18;
+    const lx = b0.bx;
+    const ly = b0.by >= th + 3 ? b0.by - th - 2 : b0.by;
+    ctx.fillStyle = "rgba(204,0,0,0.9)";
+    ctx.fillRect(lx, ly, tw, th);
+    ctx.fillStyle = "#fff";
+    ctx.fillText(label, lx + 3, ly + th - 4);
+
+    // リサイズハンドル（追加モード以外で表示）
+    if (!editor.drawMode) {
+      const hs = 4;
+      for (const h of getHandles(b0, b1)) {
+        ctx.fillStyle = "#fff";
+        ctx.strokeStyle = "rgba(204,0,0,0.9)";
+        ctx.lineWidth = 1.5;
+        ctx.fillRect(h.bx - hs, h.by - hs, hs * 2, hs * 2);
+        ctx.strokeRect(h.bx - hs, h.by - hs, hs * 2, hs * 2);
+      }
+    }
+  }
+
+  if (preview) {
+    const { bx0, by0, bx1, by1 } = preview;
+    ctx.strokeStyle = "rgba(0,110,220,0.9)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 3]);
+    ctx.strokeRect(bx0, by0, bx1 - bx0, by1 - by0);
+    ctx.fillStyle = "rgba(0,110,220,0.06)";
+    ctx.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
+    ctx.setLineDash([]);
+  }
+}
+
+function redrawAllCanvases() {
+  for (let i = 0; i < editor.pages.length; i++) {
+    redrawCanvas(i);
+    renderAnnotationLabels(i);
+  }
+}
+
+// ── 注釈テキストオーバーレイ ──
+
+function autoPlaceAnnotation(rect, pdfW, pdfH, boxWpdf, boxHpdf, margin) {
+  // rect: {x0,y0,x1,y1} PDF座標
+  margin = margin || 6;
+  const rx0=rect[0], ry0=rect[1], rx1=rect[2], ry1=rect[3];
+  if (ry1 + boxHpdf + margin <= pdfH)
+    return [Math.max(0, Math.min(rx0, pdfW - boxWpdf)), ry1 + margin];
+  if (rx1 + boxWpdf + margin <= pdfW)
+    return [rx1 + margin, Math.max(0, Math.min(ry0, pdfH - boxHpdf))];
+  if (rx0 - boxWpdf - margin >= 0)
+    return [rx0 - boxWpdf - margin, Math.max(0, Math.min(ry0, pdfH - boxHpdf))];
+  if (ry0 - boxHpdf - margin >= 0)
+    return [Math.max(0, Math.min(rx0, pdfW - boxWpdf)), ry0 - boxHpdf - margin];
+  return [Math.max(0, Math.min(rx0, pdfW - boxWpdf)), Math.max(0, pdfH - boxHpdf - 5)];
+}
+
+function renderAnnotationLabels(pageIdx) {
+  const pi = editor.pages[pageIdx];
+  if (!pi || !pi.loaded) return;
+
+  // 既存の注釈ラベルを削除
+  pi.wrapEl.querySelectorAll(".ann-label").forEach(el => el.remove());
+
+  const dispW = pi.imgEl.clientWidth;
+  const dispH = pi.imgEl.clientHeight;
+  if (!dispW) return;
+
+  const scaleX = dispW / pi.pdfW;
+  const scaleY = dispH / pi.pdfH;
+
+  // 注釈ボックスのPDF座標サイズ（大体）
+  const boxWpdf = 195, boxHpdf = 70;
+
+  for (let i = 0; i < editor.violations.length; i++) {
+    const v = editor.violations[i];
+    if (v.page_num !== pageIdx || !v.rect) continue;
+
+    // 注釈位置（PDF座標）
+    let ax, ay;
+    if (v.annotation_pos && v.annotation_pos.length === 2) {
+      [ax, ay] = v.annotation_pos;
+    } else {
+      [ax, ay] = autoPlaceAnnotation(v.rect, pi.pdfW, pi.pdfH, boxWpdf, boxHpdf);
+    }
+
+    // PDF→ブラウザ座標
+    const bx = ax * scaleX;
+    const by = ay * scaleY;
+
+    const div = document.createElement("div");
+    div.className = "ann-label";
+    div.dataset.idx = i;
+    div.dataset.pageIdx = pageIdx;
+    div.style.left = bx + "px";
+    div.style.top = by + "px";
+    div.innerHTML = `
+      <button class="ann-edit-btn" title="編集">✎</button>
+      <div class="ann-title ann-title-display">【${v.number}】${escapeHtml(v.type)}</div>
+      <div class="ann-body ann-body-display">${escapeHtml(v.explanation)}</div>
+      <div class="ann-edit-form">
+        <input type="text" class="ann-type-input" value="${escapeHtml(v.type)}" placeholder="カテゴリ名">
+        <textarea class="ann-exp-input" placeholder="指摘理由">${escapeHtml(v.explanation)}</textarea>
+        <div class="ann-edit-btns">
+          <button class="ann-btn-save">保存</button>
+          <button class="ann-btn-cancel">キャンセル</button>
+        </div>
+      </div>
+    `;
+
+    // 編集ボタン
+    const editBtn = div.querySelector(".ann-edit-btn");
+    const form    = div.querySelector(".ann-edit-form");
+    editBtn.addEventListener("mousedown", (e) => e.stopPropagation());
+    editBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      form.classList.toggle("open");
+    });
+
+    // 保存ボタン
+    div.querySelector(".ann-btn-save").addEventListener("mousedown", (e) => e.stopPropagation());
+    div.querySelector(".ann-btn-save").addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const newType = div.querySelector(".ann-type-input").value.trim();
+      const newExp  = div.querySelector(".ann-exp-input").value.trim();
+      if (!newType || !newExp) return;
+      editor.violations[i].type = newType;
+      editor.violations[i].explanation = newExp;
+      div.querySelector(".ann-title-display").textContent = newType;
+      div.querySelector(".ann-body-display").textContent = newExp;
+      form.classList.remove("open");
+      renderEditorViolationList();
+      try {
+        await fetch(`/api/session/${editor.sessionId}/violation/${i}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type: newType, explanation: newExp }),
+        });
+      } catch (_) {}
+    });
+
+    // キャンセルボタン
+    div.querySelector(".ann-btn-cancel").addEventListener("mousedown", (e) => e.stopPropagation());
+    div.querySelector(".ann-btn-cancel").addEventListener("click", (e) => {
+      e.stopPropagation();
+      form.classList.remove("open");
+    });
+
+    // フォーム内操作中はドラッグ無効
+    form.addEventListener("mousedown", (e) => e.stopPropagation());
+
+    // ドラッグ処理
+    makeDraggable(div, i, pageIdx);
+
+    // 追加モード中は非インタラクティブ
+    div.style.pointerEvents = editor.drawMode ? "none" : "auto";
+
+    pi.wrapEl.appendChild(div);
+  }
+}
+
+function makeDraggable(el, violationIdx, pageIdx) {
+  let startX, startY, startLeft, startTop;
+
+  el.addEventListener("mousedown", (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    startX = e.clientX;
+    startY = e.clientY;
+    startLeft = parseInt(el.style.left) || 0;
+    startTop  = parseInt(el.style.top)  || 0;
+    el.style.cursor = "grabbing";
+    el.style.zIndex = 20;
+
+    const onMove = (me) => {
+      el.style.left = (startLeft + me.clientX - startX) + "px";
+      el.style.top  = (startTop  + me.clientY - startY) + "px";
+    };
+
+    const onUp = async () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      el.style.cursor = "grab";
+      el.style.zIndex = 10;
+
+      // ブラウザ座標→PDF座標に変換して保存
+      const pi = editor.pages[pageIdx];
+      if (!pi) return;
+      const bx = parseInt(el.style.left);
+      const by = parseInt(el.style.top);
+      const pdfX = bx * pi.pdfW / pi.imgEl.clientWidth;
+      const pdfY = by * pi.pdfH / pi.imgEl.clientHeight;
+
+      editor.violations[violationIdx].annotation_pos = [pdfX, pdfY];
+
+      try {
+        await fetch(`/api/session/${editor.sessionId}/violation/${violationIdx}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ annotation_pos: [pdfX, pdfY] }),
+        });
+      } catch (_) {}
+    };
+
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+}
+
+// ── ヒットテスト ──
+
+function findViolationAt(bx, by, pageIdx) {
+  const pi = editor.pages[pageIdx];
+  if (!pi) return -1;
+  for (let i = 0; i < editor.violations.length; i++) {
+    const v = editor.violations[i];
+    if (v.page_num !== pageIdx || !v.rect) continue;
+    const b0 = pdfToBrowser(v.rect[0], v.rect[1], pi);
+    const b1 = pdfToBrowser(v.rect[2], v.rect[3], pi);
+    if (bx >= b0.bx && bx <= b1.bx && by >= b0.by && by <= b1.by) return i;
+  }
+  return -1;
+}
+
+// ── リサイズ ──
+
+function getHandles(b0, b1) {
+  const mx = (b0.bx + b1.bx) / 2;
+  const my = (b0.by + b1.by) / 2;
+  return [
+    { id: 'nw', bx: b0.bx, by: b0.by, cursor: 'nwse-resize' },
+    { id: 'n',  bx: mx,    by: b0.by, cursor: 'ns-resize'   },
+    { id: 'ne', bx: b1.bx, by: b0.by, cursor: 'nesw-resize' },
+    { id: 'e',  bx: b1.bx, by: my,    cursor: 'ew-resize'   },
+    { id: 'se', bx: b1.bx, by: b1.by, cursor: 'nwse-resize' },
+    { id: 's',  bx: mx,    by: b1.by, cursor: 'ns-resize'   },
+    { id: 'sw', bx: b0.bx, by: b1.by, cursor: 'nesw-resize' },
+    { id: 'w',  bx: b0.bx, by: my,    cursor: 'ew-resize'   },
+  ];
+}
+
+function findHandleAt(bx, by, pageIdx) {
+  if (editor.drawMode) return null;
+  const pi = editor.pages[pageIdx];
+  if (!pi) return null;
+  const hs = 6;
+  for (let i = 0; i < editor.violations.length; i++) {
+    const v = editor.violations[i];
+    if (v.page_num !== pageIdx || !v.rect) continue;
+    const b0 = pdfToBrowser(v.rect[0], v.rect[1], pi);
+    const b1 = pdfToBrowser(v.rect[2], v.rect[3], pi);
+    for (const h of getHandles(b0, b1)) {
+      if (Math.abs(bx - h.bx) <= hs && Math.abs(by - h.by) <= hs) {
+        return { violationIdx: i, handle: h };
+      }
+    }
+  }
+  return null;
+}
+
+function applyResizeFromOrig(orig, handleId, px, py, pdfW, pdfH) {
+  let [x0, y0, x1, y1] = orig;
+  const min = 10;
+  if (handleId === 'nw' || handleId === 'w' || handleId === 'sw')
+    x0 = Math.max(0, Math.min(px, x1 - min));
+  if (handleId === 'ne' || handleId === 'e' || handleId === 'se')
+    x1 = Math.min(pdfW, Math.max(px, x0 + min));
+  if (handleId === 'nw' || handleId === 'n' || handleId === 'ne')
+    y0 = Math.max(0, Math.min(py, y1 - min));
+  if (handleId === 'sw' || handleId === 's' || handleId === 'se')
+    y1 = Math.min(pdfH, Math.max(py, y0 + min));
+  return [x0, y0, x1, y1];
+}
+
+async function saveViolationRect(idx, rect) {
+  try {
+    await fetch(`/api/session/${editor.sessionId}/violation/${idx}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rect }),
+    });
+  } catch (_) {}
+}
+
+// ── キャンバスイベント ──
+
+function setupCanvasEvents(pageIdx) {
+  const pi = editor.pages[pageIdx];
+  const canvas = pi.canvasEl;
+
+  canvas.addEventListener("mousedown", (e) => {
+    const { bx, by } = getCanvasCoords(e, canvas);
+
+    if (editor.drawMode) {
+      editor.isDrawing = true;
+      editor.drawPageIdx = pageIdx;
+      editor.drawStart = { bx, by };
+      return;
+    }
+
+    // リサイズハンドルを優先チェック
+    const hitHandle = findHandleAt(bx, by, pageIdx);
+    if (hitHandle) {
+      e.preventDefault();
+      editor.isResizing = true;
+      editor.resizeInfo = {
+        violationIdx: hitHandle.violationIdx,
+        handle: hitHandle.handle.id,
+        origRect: [...editor.violations[hitHandle.violationIdx].rect],
+        pageIdx,
+      };
+    }
+  });
+
+  canvas.addEventListener("mousemove", (e) => {
+    const { bx, by } = getCanvasCoords(e, canvas);
+
+    if (editor.drawMode) {
+      canvas.style.cursor = "crosshair";
+      if (editor.isDrawing && editor.drawPageIdx === pageIdx) {
+        const s = editor.drawStart;
+        redrawCanvas(pageIdx, {
+          bx0: Math.min(s.bx, bx), by0: Math.min(s.by, by),
+          bx1: Math.max(s.bx, bx), by1: Math.max(s.by, by),
+        });
+      }
+      return;
+    }
+
+    if (editor.isResizing && editor.resizeInfo.pageIdx === pageIdx) {
+      const [px, py] = browserToPdf(bx, by, pi);
+      const v = editor.violations[editor.resizeInfo.violationIdx];
+      v.rect = applyResizeFromOrig(editor.resizeInfo.origRect, editor.resizeInfo.handle, px, py, pi.pdfW, pi.pdfH);
+      redrawCanvas(pageIdx);
+      return;
+    }
+
+    // カーソル更新
+    const hitHandle = findHandleAt(bx, by, pageIdx);
+    if (hitHandle) {
+      canvas.style.cursor = hitHandle.handle.cursor;
+    } else if (findViolationAt(bx, by, pageIdx) >= 0) {
+      canvas.style.cursor = "pointer";
+    } else {
+      canvas.style.cursor = "default";
+    }
+  });
+
+  canvas.addEventListener("mouseup", async (e) => {
+    const { bx, by } = getCanvasCoords(e, canvas);
+
+    // 描画完了
+    if (editor.drawMode && editor.isDrawing && editor.drawPageIdx === pageIdx) {
+      editor.isDrawing = false;
+      const s = editor.drawStart;
+      const dx = Math.abs(bx - s.bx), dy = Math.abs(by - s.by);
+      if (dx > 10 && dy > 10) {
+        const [px0, py0] = browserToPdf(Math.min(s.bx, bx), Math.min(s.by, by), pi);
+        const [px1, py1] = browserToPdf(Math.max(s.bx, bx), Math.max(s.by, by), pi);
+        await addNewArea(pageIdx, [px0, py0, px1, py1]);
+      }
+      redrawCanvas(pageIdx);
+      editor.drawStart = null;
+      return;
+    }
+
+    // リサイズ完了
+    if (editor.isResizing && editor.resizeInfo.pageIdx === pageIdx) {
+      editor.isResizing = false;
+      const ri = editor.resizeInfo;
+      editor.resizeInfo = null;
+      // 注釈位置をリセットして新しい赤枠位置に合わせて再配置
+      editor.violations[ri.violationIdx].annotation_pos = null;
+      renderAnnotationLabels(pageIdx);
+      await saveViolationRect(ri.violationIdx, editor.violations[ri.violationIdx].rect);
+      return;
+    }
+
+    // 削除クリック（リサイズもドローもない場合）
+    if (!editor.drawMode && !editor.isResizing) {
+      const hitHandle = findHandleAt(bx, by, pageIdx);
+      if (hitHandle) return; // ハンドルクリックは削除しない
+      const hitIdx = findViolationAt(bx, by, pageIdx);
+      if (hitIdx >= 0) {
+        const v = editor.violations[hitIdx];
+        if (confirm(`【${v.number}】${v.type}\nこの指摘を削除しますか？`)) {
+          await removeViolation(hitIdx);
+        }
+      }
+    }
+  });
+
+  canvas.addEventListener("mouseleave", () => {
+    if (editor.isDrawing && editor.drawPageIdx === pageIdx) {
+      editor.isDrawing = false;
+      redrawCanvas(pageIdx);
+      editor.drawStart = null;
+    }
+    // リサイズ中にマウスが出た場合は元に戻す
+    if (editor.isResizing && editor.resizeInfo?.pageIdx === pageIdx) {
+      editor.isResizing = false;
+      editor.violations[editor.resizeInfo.violationIdx].rect = [...editor.resizeInfo.origRect];
+      editor.resizeInfo = null;
+      redrawCanvas(pageIdx);
+    }
+  });
+}
+
+// ── 違反削除 ──
+
+async function removeViolation(idx) {
+  try {
+    const res = await fetch(`/api/session/${editor.sessionId}/violation/${idx}`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error("削除に失敗しました");
+    const data = await res.json();
+    editor.violations = data.violations;
+    renderEditorViolationList();
+    redrawAllCanvases();  // includes renderAnnotationLabels
+  } catch (e) {
+    showError(e.message || "削除に失敗しました。");
+  }
+}
+
+// ── 違反追加 ──
+
+async function addNewArea(pageIdx, pdfRect) {
+  const listEl = document.getElementById("editor-violation-list");
+  const indicator = document.createElement("div");
+  indicator.id = "adding-indicator";
+  indicator.innerHTML = '<div class="mini-spinner"></div>AIが指摘内容を生成しています...';
+  listEl.prepend(indicator);
+
+  try {
+    const res = await fetch(`/api/session/${editor.sessionId}/add`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ page_num: pageIdx, rect: pdfRect, trademark: editor.trademark }),
+    });
+    if (!res.ok) throw new Error("追加に失敗しました");
+    const data = await res.json();
+    editor.violations = data.violations;
+    renderEditorViolationList();
+    redrawAllCanvases();
+  } catch (e) {
+    showError(e.message || "追加に失敗しました。");
+    renderEditorViolationList();
+  } finally {
+    document.getElementById("adding-indicator")?.remove();
+  }
+}
+
+// ── 違反リスト描画（右パネル） ──
+
+function renderEditorViolationList() {
+  const list = document.getElementById("editor-violation-list");
+  document.getElementById("editor-violations-count").textContent = editor.violations.length + " 件";
+  list.innerHTML = "";
+
+  if (editor.violations.length === 0) {
+    list.innerHTML = '<p style="color:#888;font-size:13px;padding:10px 0;">指摘箇所がありません。</p>';
+    return;
+  }
+
+  editor.violations.forEach((v, i) => {
+    const item = document.createElement("div");
+    item.className = "editor-v-item";
+
+    const page = v.page_num >= 0 ? ` P.${v.page_num + 1}` : "";
+    const preview = v.text ? v.text.substring(0, 38) + (v.text.length > 38 ? "…" : "") : "";
+
+    item.innerHTML = `
+      <button class="editor-v-del" onclick="removeViolation(${i})" title="削除">✕</button>
+      <div class="editor-v-meta">
+        <span class="violation-num">【${v.number}】</span>
+        <span class="violation-type" id="v-type-label-${i}">${escapeHtml(v.type)}</span>
+        <span style="font-size:10px;color:#999;">${page}</span>
+      </div>
+      <div class="editor-v-text">${escapeHtml(preview)}</div>
+      <div class="editor-v-exp" id="v-exp-label-${i}">${escapeHtml(v.explanation)}</div>
+      <button class="editor-v-edit-btn" onclick="toggleEditArea(${i})">✎ 編集</button>
+      <div class="editor-v-edit-area" id="v-edit-${i}">
+        <label>違反カテゴリ</label>
+        <input type="text" id="v-type-input-${i}" value="${escapeHtml(v.type)}">
+        <label>指摘内容・削除理由</label>
+        <textarea id="v-exp-input-${i}">${escapeHtml(v.explanation)}</textarea>
+        <div class="editor-v-edit-btns">
+          <button class="btn-save" onclick="saveViolation(${i})">保存</button>
+          <button class="btn-cancel" onclick="toggleEditArea(${i})">キャンセル</button>
+        </div>
+      </div>
+    `;
+    list.appendChild(item);
+  });
+}
+
+// ── 編集（文言修正） ──
+
+function toggleEditArea(idx) {
+  const area = document.getElementById(`v-edit-${idx}`);
+  area.classList.toggle("open");
+}
+
+async function saveViolation(idx) {
+  const newType = document.getElementById(`v-type-input-${idx}`).value.trim();
+  const newExp  = document.getElementById(`v-exp-input-${idx}`).value.trim();
+  if (!newType || !newExp) { showError("カテゴリと指摘内容を入力してください。"); return; }
+
+  try {
+    const res = await fetch(`/api/session/${editor.sessionId}/violation/${idx}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: newType, explanation: newExp }),
+    });
+    if (!res.ok) throw new Error("保存に失敗しました");
+
+    // ローカルにも反映
+    editor.violations[idx].type = newType;
+    editor.violations[idx].explanation = newExp;
+
+    // ラベル更新（リスト再描画なしでその場更新）
+    document.getElementById(`v-type-label-${idx}`).textContent = newType;
+    document.getElementById(`v-exp-label-${idx}`).textContent = newExp;
+    toggleEditArea(idx);
+    // 注釈オーバーレイも更新
+    redrawAllCanvases();
+  } catch (e) {
+    showError(e.message || "保存に失敗しました。");
+  }
+}
+
+// ── 追加モード切り替え ──
+
+function updateCanvasInteractivity() {
+  editor.pages.forEach((pi) => {
+    if (!pi.loaded) return;
+    // 削除モード（drawMode=false）でも赤枠クリックできるようcanvasはinteractive
+    pi.canvasEl.classList.add("interactive");
+    pi.canvasEl.style.cursor = editor.drawMode ? "crosshair" : "default";
+    // 注釈ラベルのpointer-eventsを制御
+    pi.wrapEl.querySelectorAll(".ann-label").forEach(el => {
+      el.style.pointerEvents = editor.drawMode ? "none" : "auto";
+    });
+  });
+}
+
+function toggleDrawMode() {
+  editor.drawMode = !editor.drawMode;
+  const btn = document.getElementById("toggle-mode-btn");
+  const info = document.getElementById("mode-info");
+  if (editor.drawMode) {
+    btn.classList.add("active");
+    btn.textContent = "✏️ 追加モード ON";
+    info.textContent = "📐 追加したい箇所をマウスでドラッグして囲んでください";
+  } else {
+    btn.classList.remove("active");
+    btn.textContent = "✏️ 追加モード";
+    info.textContent = "🖱️ 赤い枠をクリックで削除 ／ テキストラベルをドラッグで移動できます";
+  }
+  updateCanvasInteractivity();
+}
+
+// ── PDFダウンロード ──
+
+async function downloadPDF() {
+  document.getElementById("editor-download-btn").disabled = true;
+  setLoading(true, "PDFを生成しています... (20〜60秒かかります)");
+
+  try {
+    const res = await fetch("/api/generate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: editor.sessionId, trademark: editor.trademark }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || "PDF生成に失敗しました。");
+    }
+    const blob = await res.blob();
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "removal-report.pdf";
+    a.click();
+    URL.revokeObjectURL(a.href);
+
+    document.getElementById("success-banner").style.display = "block";
+    document.getElementById("success-banner").scrollIntoView({ behavior: "smooth" });
+  } catch (e) {
+    showError(e.message || "不明なエラーが発生しました。");
+  } finally {
+    setLoading(false);
+    document.getElementById("editor-download-btn").disabled = false;
+  }
+}
+
+// ── ウィンドウリサイズ対応 ──
+
+let resizeTimer;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(redrawAllCanvases, 200);
+});
+
+// ── Enterキーで解析 ──
+
+document.addEventListener("DOMContentLoaded", () => {
+  document.getElementById("url-input").addEventListener("keydown", (e) => {
+    if (e.key === "Enter") startAnalyze();
+  });
+});
+</script>
+
+</body>
+</html>
