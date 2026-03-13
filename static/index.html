@@ -731,10 +731,12 @@ function loadPageImage(pageIdx) {
     pi.imgEl.onload = () => {
       pi.loaded = true;
       pi.canvasEl.classList.add("interactive");
-      setupCanvasEvents(pageIdx);
-      redrawCanvas(pageIdx);
-      renderAnnotationLabels(pageIdx);
-      resolve();
+      requestAnimationFrame(() => {
+        setupCanvasEvents(pageIdx);
+        redrawCanvas(pageIdx);
+        renderAnnotationLabels(pageIdx);
+        resolve();
+      });
     };
     pi.imgEl.onerror = () => {
       const pdfW = pi.pdfW || 595;
@@ -791,8 +793,10 @@ function redrawCanvas(pageIdx, preview) {
 
   const canvas = pi.canvasEl;
   const img = pi.imgEl;
-  canvas.width  = img.clientWidth;
-  canvas.height = img.clientHeight;
+  const w = img.clientWidth || img.naturalWidth || pi.pdfW;
+  const h = img.clientHeight || img.naturalHeight || pi.pdfH;
+  canvas.width  = w;
+  canvas.height = h;
   if (canvas.width === 0) return;
 
   const ctx = canvas.getContext("2d");
