@@ -719,8 +719,10 @@ async function loadEditorPages() {
     editor.pages.push({ imgEl: img, canvasEl: canvas, wrapEl: wrap, pdfW, pdfH, loaded: false });
   }
 
-  // 全ページ並列読み込み
-  await Promise.all(editor.pages.map((_, i) => loadPageImage(i)));
+  // ページを順番に読み込み（メモリ節約）
+  for (let i = 0; i < editor.pages.length; i++) {
+    await loadPageImage(i);
+  }
 }
 
 function loadPageImage(pageIdx) {
@@ -734,7 +736,25 @@ function loadPageImage(pageIdx) {
       renderAnnotationLabels(pageIdx);
       resolve();
     };
-    pi.imgEl.onerror = () => { resolve(); };
+    pi.imgEl.onerror = () => {
+      const pdfW = pi.pdfW || 595;
+      const pdfH = pi.pdfH || 842;
+      const ratio = pdfH / pdfW;
+      pi.wrapEl.style.paddingTop = (ratio * 100) + "%";
+      pi.wrapEl.style.position = "relative";
+      pi.canvasEl.width = pdfW * 2;
+      pi.canvasEl.height = pdfH * 2;
+      pi.canvasEl.style.position = "absolute";
+      pi.canvasEl.style.top = "0";
+      pi.canvasEl.style.left = "0";
+      pi.canvasEl.style.width = "100%";
+      pi.canvasEl.style.height = "100%";
+      pi.loaded = true;
+      setupCanvasEvents(pageIdx);
+      redrawCanvas(pageIdx);
+      renderAnnotationLabels(pageIdx);
+      resolve();
+    };
     pi.imgEl.src = `/api/preview/${editor.sessionId}/${pageIdx}`;
   });
 }

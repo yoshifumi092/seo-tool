@@ -797,7 +797,7 @@ async def preview_page(session_id: str, page_num: int):
     page = doc[page_num]
     pdf_w = page.rect.width
     pdf_h = page.rect.height
-    mat = fitz.Matrix(2, 2)
+    mat = fitz.Matrix(1.5, 1.5)
     pix = page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY)
     img_bytes = pix.tobytes("png")
     doc.close()
