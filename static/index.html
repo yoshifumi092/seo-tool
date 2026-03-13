@@ -728,35 +728,23 @@ async function loadEditorPages() {
 function loadPageImage(pageIdx) {
   return new Promise((resolve) => {
     const pi = editor.pages[pageIdx];
-    pi.imgEl.onload = () => {
+    const pdfW = pi.pdfW || 595;
+    const pdfH = pi.pdfH || 842;
+
+    function initCanvas() {
+      // canvasサイズをPDF寸法×2に固定（CSS width:100%で表示スケーリング）
+      pi.canvasEl.width  = pdfW * 2;
+      pi.canvasEl.height = pdfH * 2;
       pi.loaded = true;
       pi.canvasEl.classList.add("interactive");
-      requestAnimationFrame(() => {
-        setupCanvasEvents(pageIdx);
-        redrawCanvas(pageIdx);
-        renderAnnotationLabels(pageIdx);
-        resolve();
-      });
-    };
-    pi.imgEl.onerror = () => {
-      const pdfW = pi.pdfW || 595;
-      const pdfH = pi.pdfH || 842;
-      const ratio = pdfH / pdfW;
-      pi.wrapEl.style.paddingTop = (ratio * 100) + "%";
-      pi.wrapEl.style.position = "relative";
-      pi.canvasEl.width = pdfW * 2;
-      pi.canvasEl.height = pdfH * 2;
-      pi.canvasEl.style.position = "absolute";
-      pi.canvasEl.style.top = "0";
-      pi.canvasEl.style.left = "0";
-      pi.canvasEl.style.width = "100%";
-      pi.canvasEl.style.height = "100%";
-      pi.loaded = true;
       setupCanvasEvents(pageIdx);
       redrawCanvas(pageIdx);
       renderAnnotationLabels(pageIdx);
       resolve();
-    };
+    }
+
+    pi.imgEl.onload = () => initCanvas();
+    pi.imgEl.onerror = () => initCanvas();
     pi.imgEl.src = `/api/preview/${editor.sessionId}/${pageIdx}`;
   });
 }
@@ -792,12 +780,7 @@ function redrawCanvas(pageIdx, preview) {
   if (!pi || !pi.loaded) return;
 
   const canvas = pi.canvasEl;
-  const img = pi.imgEl;
-  const w = img.clientWidth || img.naturalWidth || pi.pdfW;
-  const h = img.clientHeight || img.naturalHeight || pi.pdfH;
-  canvas.width  = w;
-  canvas.height = h;
-  if (canvas.width === 0) return;
+  if (!canvas.width || canvas.width === 0) return;
 
   const ctx = canvas.getContext("2d");
   ctx.clearRect(0, 0, canvas.width, canvas.height);
