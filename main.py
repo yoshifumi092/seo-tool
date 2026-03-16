@@ -226,7 +226,20 @@ async def _call_groq_once(
             max_tokens=4096,
         )
 
-    response = await asyncio.to_thread(_call)
+    try:
+        response = await asyncio.to_thread(_call)
+    except Exception as e:
+        err = str(e)
+        if "429" in err or "rate_limit" in err.lower():
+            import re as _re
+            wait = _re.search(r'try again in ([^.]+)', err)
+            wait_msg = f"約{wait.group(1)}後に再試行してください。" if wait else "しばらく待ってから再試行してください。"
+            raise HTTPException(
+                429,
+                f"AI解析の1日の無料利用上限に達しました。{wait_msg}"
+                " 上限を増やすには Groq Dev Tier へのアップグレードが必要です: https://console.groq.com/settings/billing"
+            )
+        raise
     response_text = response.choices[0].message.content
 
     parsers = [
