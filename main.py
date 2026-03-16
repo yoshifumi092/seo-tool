@@ -336,25 +336,8 @@ async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
         if trademark else ""
     )
 
-    CHUNK = 10000
-
-    if len(text) <= CHUNK:
-        return await _analyze_once(text, url, trademark_hint)
-
-    # 長い記事：前半→後半を順番に解析してマージ（並列だとレート制限に引っかかる）
-    chunk1 = text[:CHUNK]
-    chunk2 = text[CHUNK : CHUNK * 2]
-
-    r1 = await _analyze_once(chunk1, url, trademark_hint, "前半")
-    await asyncio.sleep(2)  # レート制限対策
-    r2 = await _analyze_once(chunk2, url, trademark_hint, "後半")
-
-    violations = r1.get("violations", []) + r2.get("violations", [])
-    return {
-        "article_title": r1.get("article_title") or r2.get("article_title", "記事"),
-        "trademark": r1.get("trademark") or r2.get("trademark", trademark or "商標"),
-        "violations": violations,
-    }
+    # 常に1回のAPIコールで解析（レート制限対策）
+    return await _analyze_once(text[:12000], url, trademark_hint)
 
 
 async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
