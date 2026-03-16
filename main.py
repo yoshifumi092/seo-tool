@@ -34,8 +34,6 @@ SESSION_TTL = 3600
 _analysis_cache: dict = {}  # key: (url, trademark) → {"result": dict, "ts": float}
 CACHE_TTL = 3600  # 1時間
 
-# Gemini API同時呼び出しを1つに制限するロック
-_gemini_lock = asyncio.Lock()
 
 
 # ─────────────────────────────────────────────
@@ -287,20 +285,12 @@ async def _analyze_once(
     if not gemini_key:
         raise HTTPException(500, "GEMINI_API_KEY を Railway の環境変数に設定してください。")
 
-    async with _gemini_lock:
-        for attempt in range(2):
-            try:
-                return await _call_gemini_once(text_chunk, url, trademark_hint, section_label)
-            except HTTPException as e:
-                if e.status_code == 429:
-                    if attempt == 0:
-                        await asyncio.sleep(65)
-                        continue
-                    raise HTTPException(429, "Gemini APIのレート制限に達しました。1分ほど待ってから再試行してください。")
-                elif e.status_code == 400:
-                    raise HTTPException(400, "Gemini APIキーが無効です。RailwayのGEMINI_API_KEYを確認してください。")
-                else:
-                    raise
+    try:
+        return await _call_gemini_once(text_chunk, url, trademark_hint, section_label)
+    except HTTPException as e:
+        if e.status_code == 400:
+            raise HTTPException(400, "Gemini APIキーが無効です。RailwayのGEMINI_API_KEYを確認してください。")
+        raise
 
 
 async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
