@@ -84,11 +84,33 @@ async def _schedule_cleanup(session_id: str, delay: int) -> None:
 async def url_to_pdf(url: str, output_path: str) -> None:
     async with async_playwright() as p:
         browser = await p.chromium.launch(
-            args=["--no-sandbox", "--disable-setuid-sandbox"]
+            args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-blink-features=AutomationControlled",
+            ]
         )
-        page = await browser.new_page()
-        await page.goto(url, wait_until="networkidle", timeout=30000)
-        await page.wait_for_timeout(2000)
+        context = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/120.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1280, "height": 900},
+            locale="ja-JP",
+        )
+        page = await context.new_page()
+
+        # まず domcontentloaded で取得（networkidle はタイムアウトしやすい）
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=45000)
+        except Exception:
+            # それでも失敗した場合は load イベントで再試行
+            await page.goto(url, wait_until="load", timeout=45000)
+
+        # JS・画像の読み込みを少し待つ
+        await page.wait_for_timeout(3000)
+
         await page.pdf(
             path=output_path,
             format="A4",
@@ -365,23 +387,21 @@ def find_violation_positions(pdf_path: str, violations: list) -> list:
                 break
 
         if not found:
-            # テキストが見つからなくても必ずページ0に配置する
-            # （ユーザーが手動でドラッグして正しい位置に移動できる）
+            # テキストが見つからない場合：
+            # ページ0の最初のテキストブロック付近に配置（ユーザーがドラッグ移動可能）
             pw = page_widths[0] if page_widths else 595
-            row = not_found_count % 10
-            col = not_found_count // 10
-            fx0 = 10.0 + col * 200
-            fy0 = 20.0 + row * 50
-            fx1 = min(fx0 + 180, pw - 5)
-            fy1 = fy0 + 18
+            ph = page_heights[0] if page_heights else 842
+            row = not_found_count % 20
+            fy0 = 30.0 + row * 40
+            fy1 = fy0 + 16
             positions.append({
                 "page_num": 0,
-                "rect": [fx0, fy0, fx1, fy1],
+                "rect": [10.0, fy0, min(pw - 10, 400.0), fy1],
                 "number": i + 1,
                 "type": v.get("type", ""),
                 "explanation": v.get("explanation", ""),
                 "text": raw_text,
-                "auto_placed": True,  # 自動配置フラグ
+                "auto_placed": True,
             })
             not_found_count += 1
 
@@ -837,11 +857,19 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
     pdf_path = f"/tmp/{session_id}_orig.pdf"
 
     try:
-        await url_to_pdf(request.url, pdf_path)
+        try:
+            await url_to_pdf(request.url, pdf_path)
+        except Exception as e:
+            err = str(e)
+            if "net::" in err or "ERR_" in err:
+                raise HTTPException(400, f"URLにアクセスできませんでした。URLが正しいか確認してください。（{err}）")
+            if "Timeout" in err or "timeout" in err:
+                raise HTTPException(400, "ページの読み込みがタイムアウトしました。時間をおいて再試行してください。")
+            raise HTTPException(400, f"ページの読み込みに失敗しました: {err}")
 
         text = extract_text_from_pdf(pdf_path)
         if len(text.strip()) < 80:
-            raise HTTPException(400, "PDFからテキストを十分に抽出できませんでした。")
+            raise HTTPException(400, "このページはテキストを抽出できませんでした。Cloudflare等のボット対策で保護されている可能性があります。")
 
         analysis = await analyze_with_claude(text, request.url, request.trademark)
 
