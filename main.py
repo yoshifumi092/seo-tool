@@ -210,6 +210,40 @@ def _build_analysis_prompt(
 {text_chunk}"""
 
 
+def _parse_ai_response(response_text: str) -> dict:
+    parsers = [
+        lambda t: json.loads(t),
+        lambda t: json.loads(re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", t).group(1)),
+        lambda t: json.loads(t[t.find("{") : t.rfind("}") + 1]),
+    ]
+    for parser in parsers:
+        try:
+            result = parser(response_text)
+            if "violations" in result:
+                return result
+        except Exception:
+            continue
+    return {"article_title": "記事", "trademark": "", "violations": []}
+
+
+async def _call_gemini_once(
+    text_chunk: str,
+    url: str,
+    trademark_hint: str,
+    section_label: str = "",
+) -> dict:
+    import google.generativeai as genai
+    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+    model = genai.GenerativeModel("gemini-1.5-flash")
+    prompt = _build_analysis_prompt(text_chunk, url, trademark_hint, section_label)
+
+    def _call():
+        return model.generate_content(prompt)
+
+    response = await asyncio.to_thread(_call)
+    return _parse_ai_response(response.text)
+
+
 async def _call_groq_once(
     client: Groq,
     text_chunk: str,
@@ -231,39 +265,36 @@ async def _call_groq_once(
     except Exception as e:
         err = str(e)
         if "429" in err or "rate_limit" in err.lower():
-            import re as _re
-            wait = _re.search(r'try again in ([^.]+)', err)
-            wait_msg = f"約{wait.group(1)}後に再試行してください。" if wait else "しばらく待ってから再試行してください。"
+            wait = re.search(r'try again in ([^.]+)', err)
+            wait_msg = f"約{wait.group(1)}後に再試行できます。" if wait else "しばらく待ってから再試行してください。"
             raise HTTPException(
                 429,
                 f"AI解析の1日の無料利用上限に達しました。{wait_msg}"
-                " 上限を増やすには Groq Dev Tier へのアップグレードが必要です: https://console.groq.com/settings/billing"
+                " または GEMINI_API_KEY を Railway に設定すると無料で続けられます（https://aistudio.google.com/app/apikey）"
             )
         raise
-    response_text = response.choices[0].message.content
+    return _parse_ai_response(response.choices[0].message.content)
 
-    parsers = [
-        lambda t: json.loads(t),
-        lambda t: json.loads(re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", t).group(1)),
-        lambda t: json.loads(t[t.find("{") : t.rfind("}") + 1]),
-    ]
-    for parser in parsers:
-        try:
-            result = parser(response_text)
-            if "violations" in result:
-                return result
-        except Exception:
-            continue
 
-    return {"article_title": "記事", "trademark": "", "violations": []}
+async def _analyze_once(
+    text_chunk: str,
+    url: str,
+    trademark_hint: str,
+    section_label: str = "",
+) -> dict:
+    """Gemini優先・Groqフォールバックで1チャンクを解析する。"""
+    if os.environ.get("GEMINI_API_KEY"):
+        return await _call_gemini_once(text_chunk, url, trademark_hint, section_label)
+    groq_key = os.environ.get("GROQ_API_KEY", "")
+    if not groq_key:
+        raise HTTPException(500, "GEMINI_API_KEY または GROQ_API_KEY を Railway の環境変数に設定してください。")
+    return await _call_groq_once(Groq(api_key=groq_key), text_chunk, url, trademark_hint, section_label)
 
 
 async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
-    api_key = os.environ.get("GROQ_API_KEY", "")
-    if not api_key:
-        raise HTTPException(500, "GROQ_API_KEY が設定されていません。")
+    if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("GROQ_API_KEY"):
+        raise HTTPException(500, "GEMINI_API_KEY または GROQ_API_KEY が設定されていません。")
 
-    client = Groq(api_key=api_key)
     trademark_hint = (
         f"なお、ユーザーより対象商標として「{trademark}」が指定されています。"
         if trademark else ""
@@ -272,16 +303,15 @@ async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
     CHUNK = 10000
 
     if len(text) <= CHUNK:
-        # 短い記事：1回で解析
-        return await _call_groq_once(client, text, url, trademark_hint)
+        return await _analyze_once(text, url, trademark_hint)
 
     # 長い記事：前半・後半を並列解析してマージ
     chunk1 = text[:CHUNK]
     chunk2 = text[CHUNK : CHUNK * 2]
 
     r1, r2 = await asyncio.gather(
-        _call_groq_once(client, chunk1, url, trademark_hint, "前半"),
-        _call_groq_once(client, chunk2, url, trademark_hint, "後半"),
+        _analyze_once(chunk1, url, trademark_hint, "前半"),
+        _analyze_once(chunk2, url, trademark_hint, "後半"),
     )
 
     violations = r1.get("violations", []) + r2.get("violations", [])
