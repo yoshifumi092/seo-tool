@@ -739,8 +739,11 @@ function loadPageImage(pageIdx) {
       pi.canvasEl.classList.add("interactive");
       setupCanvasEvents(pageIdx);
       redrawCanvas(pageIdx);
-      renderAnnotationLabels(pageIdx);
-      resolve();
+      // レイアウト確定後に注釈ラベルを描画（clientWidthが0の場合に備えてrAF）
+      requestAnimationFrame(() => {
+        renderAnnotationLabels(pageIdx);
+        resolve();
+      });
     }
 
     pi.imgEl.onload = () => initCanvas();
@@ -866,9 +869,9 @@ function renderAnnotationLabels(pageIdx) {
   // 既存の注釈ラベルを削除
   pi.wrapEl.querySelectorAll(".ann-label").forEach(el => el.remove());
 
-  const dispW = pi.imgEl.clientWidth;
-  const dispH = pi.imgEl.clientHeight;
-  if (!dispW) return;
+  // clientWidthが0の場合はcanvasのCSS幅を使う（フォールバック）
+  const dispW = pi.imgEl.clientWidth || pi.canvasEl.clientWidth || pi.pdfW;
+  const dispH = pi.imgEl.clientHeight || pi.canvasEl.clientHeight || pi.pdfH;
 
   const scaleX = dispW / pi.pdfW;
   const scaleY = dispH / pi.pdfH;

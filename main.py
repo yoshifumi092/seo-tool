@@ -180,7 +180,7 @@ async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
         return client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=4096,
+            max_tokens=8192,
         )
 
     response = await asyncio.to_thread(_call_groq)
@@ -260,6 +260,13 @@ async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
 # PDF加工
 # ─────────────────────────────────────────────
 
+def _normalize_search_text(text: str) -> str:
+    """検索テキストをNFKC正規化＋空白正規化する。"""
+    text = unicodedata.normalize("NFKC", text)
+    text = re.sub(r'[\s\u3000\u00a0]+', ' ', text)
+    return text.strip()
+
+
 def find_violation_positions(pdf_path: str, violations: list) -> list:
     """各違反テキストのPDF上の座標を検索する（リスト形式で返す）。"""
     doc = fitz.open(pdf_path)
@@ -267,15 +274,22 @@ def find_violation_positions(pdf_path: str, violations: list) -> list:
 
     for i, v in enumerate(violations):
         raw_text = v.get("text", "")
+        normalized = _normalize_search_text(raw_text)
         found = False
 
-        for length in [len(raw_text), 60, 40, 20]:
-            candidate = raw_text[:length].strip()
-            if len(candidate) < 8:
+        # 試みる長さ: 正規化テキスト, 80, 60, 40, 20, 10文字
+        for length in [len(normalized), 80, 60, 40, 20, 10]:
+            candidate = normalized[:length].strip()
+            if len(candidate) < 5:
                 continue
             for page_num in range(len(doc)):
                 page = doc[page_num]
-                rects = page.search_for(candidate)
+                rects = page.search_for(candidate, quads=False)
+                if not rects:
+                    # 空白を除いて再試行（PDF内でテキストが途中改行されている場合）
+                    compact = re.sub(r'\s+', '', candidate)
+                    if len(compact) >= 5:
+                        rects = page.search_for(compact[:20], quads=False)
                 if rects:
                     r = rects[0]
                     positions.append({
