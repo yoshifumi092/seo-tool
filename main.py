@@ -292,10 +292,10 @@ async def _call_groq_once(
         if "429" in err or "rate_limit" in err.lower():
             wait = re.search(r'try again in ([^.]+)', err)
             wait_msg = f"約{wait.group(1)}後に再試行できます。" if wait else "しばらく待ってから再試行してください。"
+            gemini_hint = "" if os.environ.get("GEMINI_API_KEY") else " または GEMINI_API_KEY を Railway に設定すると無料で続けられます（https://aistudio.google.com/app/apikey）"
             raise HTTPException(
                 429,
-                f"AI解析の1日の無料利用上限に達しました。{wait_msg}"
-                " または GEMINI_API_KEY を Railway に設定すると無料で続けられます（https://aistudio.google.com/app/apikey）"
+                f"Groq AIの1日の無料利用上限に達しました。{wait_msg}{gemini_hint}"
             )
         raise
     return _parse_ai_response(response.choices[0].message.content)
@@ -314,17 +314,30 @@ async def _analyze_once(
     if not gemini_key and not groq_key:
         raise HTTPException(500, "GEMINI_API_KEY または GROQ_API_KEY を Railway の環境変数に設定してください。")
 
+    gemini_failed_429 = False
+
     # Geminiを試みる
     if gemini_key:
         try:
             return await _call_gemini_once(text_chunk, url, trademark_hint, section_label)
         except HTTPException as e:
-            if e.status_code != 429 or not groq_key:
+            if e.status_code == 429 and groq_key:
+                gemini_failed_429 = True
+                # Gemini 429 → Groqにフォールバック
+            elif e.status_code == 400:
+                raise HTTPException(400, "Gemini APIキーが無効です。RailwayのGEMINI_API_KEYを正しく設定してください。")
+            else:
                 raise
-            # Gemini 429 → Groqにフォールバック
 
-    # Groqにフォールバック
-    return await _call_groq_once(Groq(api_key=groq_key), text_chunk, url, trademark_hint, section_label)
+    # Groqにフォールバック（またはGeminiキーなし）
+    try:
+        return await _call_groq_once(Groq(api_key=groq_key), text_chunk, url, trademark_hint, section_label)
+    except HTTPException as e:
+        if e.status_code == 429:
+            if gemini_failed_429:
+                raise HTTPException(429, "GeminiとGroqの両方がレート制限に達しました。数分待ってから再試行してください。（Gemini: 1分待ち／Groq: 明日リセット）")
+            raise
+        raise
 
 
 async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
