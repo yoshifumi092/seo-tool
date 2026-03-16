@@ -972,6 +972,19 @@ async def root():
     return FileResponse("static/index.html")
 
 
+@app.get("/api/status")
+async def api_status():
+    """APIキーの設定状況を確認する診断エンドポイント。"""
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    groq_key = os.environ.get("GROQ_API_KEY", "")
+    return {
+        "gemini_key_set": bool(gemini_key),
+        "gemini_key_preview": (gemini_key[:8] + "...") if gemini_key else "未設定",
+        "groq_key_set": bool(groq_key),
+        "groq_key_preview": (groq_key[:8] + "...") if groq_key else "未設定",
+    }
+
+
 @app.get("/api/debug/{session_id}")
 async def debug_session(session_id: str):
     """デバッグ用：セッションの違反データを確認する。"""
