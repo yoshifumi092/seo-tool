@@ -7,7 +7,6 @@ import uuid
 import unicodedata
 from urllib.parse import urlparse
 
-from groq import Groq
 import fitz  # PyMuPDF
 import uvicorn
 from fastapi import FastAPI, HTTPException, BackgroundTasks
@@ -30,6 +29,13 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 sessions: dict = {}
 SESSION_TTL = 3600
+
+# URL解析結果キャッシュ（同じURLを再解析してAPIレート制限を回避）
+_analysis_cache: dict = {}  # key: (url, trademark) → {"result": dict, "ts": float}
+CACHE_TTL = 3600  # 1時間
+
+# Gemini API同時呼び出しを1つに制限するロック
+_gemini_lock = asyncio.Lock()
 
 
 # ─────────────────────────────────────────────
@@ -238,7 +244,7 @@ async def _call_gemini_once(
     api_key = os.environ["GEMINI_API_KEY"]
     endpoint = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.0-flash:generateContent?key={api_key}"
+        f"gemini-2.0-flash-lite:generateContent?key={api_key}"
     )
     prompt = _build_analysis_prompt(text_chunk, url, trademark_hint, section_label)
     payload = _json.dumps({
@@ -269,99 +275,71 @@ async def _call_gemini_once(
     return _parse_ai_response(text)
 
 
-async def _call_groq_once(
-    client: Groq,
-    text_chunk: str,
-    url: str,
-    trademark_hint: str,
-    section_label: str = "",
-) -> dict:
-    prompt = _build_analysis_prompt(text_chunk, url, trademark_hint, section_label)
-
-    def _call():
-        return client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=4096,
-        )
-
-    try:
-        response = await asyncio.to_thread(_call)
-    except Exception as e:
-        err = str(e)
-        if "429" in err or "rate_limit" in err.lower():
-            wait = re.search(r'try again in ([^.]+)', err)
-            wait_msg = f"約{wait.group(1)}後に再試行できます。" if wait else "しばらく待ってから再試行してください。"
-            gemini_hint = "" if os.environ.get("GEMINI_API_KEY") else " または GEMINI_API_KEY を Railway に設定すると無料で続けられます（https://aistudio.google.com/app/apikey）"
-            raise HTTPException(
-                429,
-                f"Groq AIの1日の無料利用上限に達しました。{wait_msg}{gemini_hint}"
-            )
-        raise
-    return _parse_ai_response(response.choices[0].message.content)
-
-
 async def _analyze_once(
     text_chunk: str,
     url: str,
     trademark_hint: str,
     section_label: str = "",
 ) -> dict:
-    """Gemini優先・Groqフォールバックで1チャンクを解析する。"""
+    """Geminiで1チャンクを解析する（429の場合は65秒待って1回リトライ）。"""
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
-    groq_key = os.environ.get("GROQ_API_KEY", "")
 
-    if not gemini_key and not groq_key:
-        raise HTTPException(500, "GEMINI_API_KEY または GROQ_API_KEY を Railway の環境変数に設定してください。")
+    if not gemini_key:
+        raise HTTPException(500, "GEMINI_API_KEY を Railway の環境変数に設定してください。")
 
-    gemini_failed_429 = False
-
-    # Geminiを試みる
-    if gemini_key:
-        try:
-            return await _call_gemini_once(text_chunk, url, trademark_hint, section_label)
-        except HTTPException as e:
-            if e.status_code == 429 and groq_key:
-                gemini_failed_429 = True
-                # Gemini 429 → Groqにフォールバック
-            elif e.status_code == 400:
-                raise HTTPException(400, "Gemini APIキーが無効です。RailwayのGEMINI_API_KEYを正しく設定してください。")
-            else:
-                raise
-
-    # Groqにフォールバック（またはGeminiキーなし）
-    try:
-        return await _call_groq_once(Groq(api_key=groq_key), text_chunk, url, trademark_hint, section_label)
-    except HTTPException as e:
-        if e.status_code == 429:
-            if gemini_failed_429:
-                raise HTTPException(429, "GeminiとGroqの両方がレート制限に達しました。数分待ってから再試行してください。（Gemini: 1分待ち／Groq: 明日リセット）")
-            raise
-        raise
+    async with _gemini_lock:
+        for attempt in range(2):
+            try:
+                return await _call_gemini_once(text_chunk, url, trademark_hint, section_label)
+            except HTTPException as e:
+                if e.status_code == 429:
+                    if attempt == 0:
+                        await asyncio.sleep(65)
+                        continue
+                    raise HTTPException(429, "Gemini APIのレート制限に達しました。1分ほど待ってから再試行してください。")
+                elif e.status_code == 400:
+                    raise HTTPException(400, "Gemini APIキーが無効です。RailwayのGEMINI_API_KEYを確認してください。")
+                else:
+                    raise
 
 
 async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
-    if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("GROQ_API_KEY"):
-        raise HTTPException(500, "GEMINI_API_KEY または GROQ_API_KEY が設定されていません。")
+    if not os.environ.get("GEMINI_API_KEY"):
+        raise HTTPException(500, "GEMINI_API_KEY が設定されていません。")
 
     trademark_hint = (
         f"なお、ユーザーより対象商標として「{trademark}」が指定されています。"
         if trademark else ""
     )
 
-    # 常に1回のAPIコールで解析（レート制限対策）
-    return await _analyze_once(text[:12000], url, trademark_hint)
+    # キャッシュチェック（同じURLを再解析してAPIレート制限を回避）
+    cache_key = (url, trademark)
+    cached = _analysis_cache.get(cache_key)
+    if cached and (time.time() - cached["ts"]) < CACHE_TTL:
+        return cached["result"]
+
+    result = await _analyze_once(text[:12000], url, trademark_hint)
+
+    # キャッシュに保存
+    _analysis_cache[cache_key] = {"result": result, "ts": time.time()}
+    # 古いキャッシュを掃除（最大50件）
+    if len(_analysis_cache) > 50:
+        oldest = min(_analysis_cache, key=lambda k: _analysis_cache[k]["ts"])
+        del _analysis_cache[oldest]
+
+    return result
 
 
 async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
-    """選択エリアのテキストをAIで解析して違反カテゴリと理由を返す。"""
-    api_key = os.environ.get("GROQ_API_KEY", "")
+    """選択エリアのテキストをGeminiで解析して違反カテゴリと理由を返す。"""
+    api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         return {"type": "手動追加", "explanation": "ユーザーにより手動で追加された指摘箇所"}
 
-    client = Groq(api_key=api_key)
-    trademark_hint = f"対象商標：{trademark}" if trademark else ""
+    import urllib.request
+    import json as _json
 
+    trademark_hint = f"対象商標：{trademark}" if trademark else ""
     prompt = f"""以下のテキストはネガティブ記事の一部です。{trademark_hint}
 削除申請・修正要求に使える客観的な指摘として、違反カテゴリと理由を特定してください。
 
@@ -379,16 +357,26 @@ async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
   "explanation": "この記述が問題である具体的な理由（2〜3文。根拠の弱さ・断定の強さ・読者への印象を指摘し、削除申請に直接転用できる表現で記載してください）"
 }}"""
 
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-2.0-flash-lite:generateContent?key={api_key}"
+    )
+    payload = _json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"maxOutputTokens": 512},
+    }).encode()
+
     def _call():
-        return client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=512,
+        req = urllib.request.Request(
+            endpoint, data=payload,
+            headers={"Content-Type": "application/json"}, method="POST",
         )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return _json.loads(resp.read())
 
     try:
-        response = await asyncio.to_thread(_call)
-        response_text = response.choices[0].message.content
+        result = await asyncio.to_thread(_call)
+        response_text = result["candidates"][0]["content"]["parts"][0]["text"]
         parsers = [
             lambda t: json.loads(t),
             lambda t: json.loads(re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", t).group(1)),
@@ -396,9 +384,9 @@ async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
         ]
         for parser in parsers:
             try:
-                result = parser(response_text)
-                if "type" in result and "explanation" in result:
-                    return result
+                r = parser(response_text)
+                if "type" in r and "explanation" in r:
+                    return r
             except Exception:
                 continue
     except Exception:
@@ -976,12 +964,9 @@ async def root():
 async def api_status():
     """APIキーの設定状況を確認する診断エンドポイント。"""
     gemini_key = os.environ.get("GEMINI_API_KEY", "")
-    groq_key = os.environ.get("GROQ_API_KEY", "")
     return {
         "gemini_key_set": bool(gemini_key),
         "gemini_key_preview": (gemini_key[:8] + "...") if gemini_key else "未設定",
-        "groq_key_set": bool(groq_key),
-        "groq_key_preview": (groq_key[:8] + "...") if groq_key else "未設定",
     }
 
 
