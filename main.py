@@ -269,12 +269,12 @@ def _normalize_search_text(text: str) -> str:
 
 def _search_text_in_page(page: fitz.Page, normalized_text: str) -> fitz.Rect | None:
     """
-    ページ内でテキストを検索する。
-    1) search_for（PyMuPDF組み込み、空白正規化あり）
-    2) get_text("blocks") を使ったPythonレベルの部分一致 → ブロックRectを返す
+    ページ内でテキストを検索して座標を返す。
+    方法1: search_for（高速）
+    方法2: 文字単位の座標マッチング（Playwright生成PDFの日本語対応）
     """
-    # ── 方法1: search_for で候補の長さを変えながら試す ──
-    for length in [len(normalized_text), 80, 60, 40, 20, 12, 8]:
+    # ── 方法1: search_for（空白正規化済みの候補で試す） ──
+    for length in [len(normalized_text), 60, 40, 20, 12]:
         cand = normalized_text[:length].strip()
         if len(cand) < 5:
             continue
@@ -282,25 +282,55 @@ def _search_text_in_page(page: fitz.Page, normalized_text: str) -> fitz.Rect | N
         if rects:
             return rects[0]
 
-    # ── 方法2: Pythonレベルのテキストブロック部分一致 ──
-    # get_text("blocks") はPDF内のテキストブロックを座標付きで返す
-    for length in range(min(len(normalized_text), 40), 4, -2):
-        fragment = normalized_text[:length].strip()
-        if len(fragment) < 5:
-            continue
-        for b in page.get_text("blocks"):
-            if b[6] != 0:  # テキストブロック以外はスキップ
-                continue
-            block_text = _normalize_search_text(b[4])
-            if fragment in block_text:
-                # ブロック内でさらに正確な位置を取得（短い文字列で再試行）
-                precise = page.search_for(fragment[:20], quads=False)
-                if precise:
-                    return precise[0]
-                # 正確な位置が取れなければブロックRectを使う
-                return fitz.Rect(b[0], b[1], b[2], b[3])
+    # ── 方法2: rawdict で文字単位の位置マッチング ──
+    # Playwright生成PDFでは文字間にスペースが混入し search_for が失敗するため、
+    # 個々の文字座標を取得してスペースなしで文字列照合する
+    target_nospace = re.sub(r'\s+', '', normalized_text)[:40]
+    if len(target_nospace) < 4:
+        return None
 
-    return None
+    try:
+        all_chars = []
+        for block in page.get_text("rawdict")["blocks"]:
+            if block.get("type") != 0:
+                continue
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    for ch in span.get("chars", []):
+                        c = unicodedata.normalize("NFKC", ch["c"])
+                        if not c.strip():   # 空白はスキップ
+                            continue
+                        all_chars.append({"c": c, "bbox": ch["bbox"]})
+
+        if not all_chars:
+            return None
+
+        page_str = "".join(ch["c"] for ch in all_chars)
+        idx = page_str.find(target_nospace)
+        if idx < 0:
+            # 短くして再試行
+            for trim in [30, 20, 12, 8]:
+                short = target_nospace[:trim]
+                idx = page_str.find(short)
+                if idx >= 0:
+                    target_nospace = short
+                    break
+
+        if idx < 0:
+            return None
+
+        matched = all_chars[idx: idx + len(target_nospace)]
+        if not matched:
+            return None
+
+        x0 = min(c["bbox"][0] for c in matched)
+        y0 = min(c["bbox"][1] for c in matched)
+        x1 = max(c["bbox"][2] for c in matched)
+        y1 = max(c["bbox"][3] for c in matched)
+        return fitz.Rect(x0, y0, x1, y1)
+
+    except Exception:
+        return None
 
 
 def find_violation_positions(pdf_path: str, violations: list) -> list:
