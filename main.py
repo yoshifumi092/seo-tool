@@ -137,64 +137,49 @@ def extract_text_from_pdf(pdf_path: str) -> str:
 # AI解析
 # ─────────────────────────────────────────────
 
-async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
-    api_key = os.environ.get("GROQ_API_KEY", "")
-    if not api_key:
-        raise HTTPException(500, "GROQ_API_KEY が設定されていません。")
-
-    client = Groq(api_key=api_key)
-    trademark_hint = (
-        f"なお、ユーザーより対象商標として「{trademark}」が指定されています。"
-        if trademark else ""
-    )
-
-    prompt = f"""あなたは風評被害・誹謗中傷の削除申請を専門とする法務アシスタントです。
+def _build_analysis_prompt(
+    text_chunk: str,
+    url: str,
+    trademark_hint: str,
+    section_label: str = "",
+) -> str:
+    section_note = f"（記事テキスト {section_label}）" if section_label else "（記事テキスト）"
+    return f"""あなたは風評被害・誹謗中傷の削除申請を専門とする法務アシスタントです。
 
 【背景と前提】
-以下の記事は、第三者（競合業者・アフィリエイター等）が書いたネガティブ記事です。
-記事の目的は「{trademark_hint or '対象の商標・講師・会社'}」の評判を傷つけ、
-読者を自社商品や競合サービスへ誘導することです。
-
-記事の典型的な構造：
-  タイトル：「○○（商標名） 詐欺」「○○ やばい」「○○ 評判 悪い」など
-  本文：商標名・代表者名・講師名を使って根拠なく批判
-  結末：「だからこちらがおすすめ」と競合・アフィリエイト先へ誘導
-
-あなたの仕事：
-この記事の中から、ホスティング会社・Googleへの削除申請に使える
-**問題のある記述**を抜き出し、なぜ法的に問題かを説明してください。
+以下は、第三者（競合業者・アフィリエイター等）が書いたネガティブSEO記事の一部です。
+記事の目的は対象の商標・講師・会社の評判を傷つけ、読者を競合サービスへ誘導することです。
+{trademark_hint}
 
 【対象URL】
 {url}
-{trademark_hint}
 
-【探すべき問題記述の種類】
+【指摘すべき問題記述】
 
 A. 根拠のない断定的ネガティブ表現【最重要・最優先】
-   - 「詐欺」「詐欺師」「悪質」「危険」「やばい」「怪しい」などの断定
-   - 「騙された」「被害」「被害者が出ている」などを証拠なく断定
-   - 「稼げない」「効果がない」「意味がない」などの断定
-   - 「返金できない」「連絡が取れない」などのトラブル断定
+   例：「詐欺」「詐欺師」「悪質」「危険」「やばい」「騙された」「被害者が出ている」
+       「稼げない」「効果がない」「返金できない」「連絡が取れない」などを証拠なく断定
 
 B. 商標・代表者・講師名を使った名誉毀損
-   - 商標名や人名を直接使って「信用できない」「問題がある」と断定
-   - 人物の過去・経歴・人格を根拠なく否定する記述
-   - 「○○の正体」「○○の裏側」等のセンセーショナルな断定
+   例：人名や商標名を直接使って「信用できない」「問題がある」と断定
+       「○○の正体」「○○の裏側」などで人格・経歴を根拠なく否定
 
-C. アフィリエイト誘導目的の記述
-   - 対象を否定した直後に別サービスを「おすすめ」として紹介
-   - 「○○より△△がいい」という比較で対象を不当に貶める記述
-   - 広告・報酬目的で競合サービスへ誘導していると読める構成
+C. 競合・アフィリエイトへの不当誘導
+   例：対象を否定した直後に「こちらが本当におすすめ」と競合を紹介
+       報酬目的で読者を別サービスへ誘導していると明確に読める構成
 
-D. 匿名・出典不明情報を事実として記述
-   - 「口コミ」「評判」「体験談」と称して否定的情報を断定的に書く
-   - 「〜という声が多い」「〜という報告がある」を根拠に悪評を断定
-   - 証拠・出典のない「被害報告」
+D. 匿名・出典不明の否定情報を事実として断定
+   例：「〜という被害報告がある」「口コミで〜という声が多い」を根拠に悪評を断定
 
 E. 購買・参加を妨げる営業妨害表現
-   - 「やめたほうがいい」「手を出すな」「絶対に購入するな」
-   - 「登録前に必ずこれを読め」系のキャッチで否定記事に誘導
-   - 検討中の読者に対して購入・参加を思いとどまらせる断定的警告
+   例：「絶対に買うな」「手を出すな」「登録前に必ずこれを読め」
+
+【指摘しないもの（除外リスト）】
+- ナビゲーション・メニュー・パンくずリスト・タグ・カテゴリ名
+- 著者名・日付・サイト名・URL・SNSシェアボタン等のメタ情報
+- 「この記事では〜を解説します」などの中立的な導入文
+- 事実に基づく客観的説明や一般的な注意喚起（根拠や出典がある場合）
+- 単なる感想・意見・疑問形表現（断定していない場合）
 
 以下のJSON形式のみで返してください（前置き・補足・コードブロック一切不要）：
 
@@ -203,30 +188,41 @@ E. 購買・参加を妨げる営業妨害表現
   "trademark": "この記事が攻撃している商標・サービス名または人名（最重要な1つ）",
   "violations": [
     {{
-      "text": "問題のある記述（記事テキストから10〜25文字を一字一句そのまま抜粋）",
+      "text": "問題のある記述（以下のテキストから10〜30文字を一字一句そのまま抜粋）",
       "type": "A/B/C/D/E のどれか",
-      "explanation": "なぜこの記述が名誉毀損・信用毀損・業務妨害にあたるか。削除申請書に転用できる法的表現で2文以内で説明。"
+      "explanation": "なぜ名誉毀損・信用毀損・業務妨害にあたるか。削除申請書に転用できる法的表現で2文以内で説明。"
     }}
   ]
 }}
 
 【絶対に守るルール】
-1. violations は10〜15件出力する
-2. "text" は記事テキストから10〜25文字を一字一句そのまま引用する（改変・要約・追加禁止）
-3. "text" は記事テキスト内に実際に存在する文字列のみ（存在しない文字列は絶対に作らない）
-4. Aを最優先で探す。次にB、C、D、Eの順
+1. violations は10〜15件出力する（上記テキスト内に存在する問題箇所のみ）
+2. "text" は下記テキストから10〜30文字を一字一句そのまま引用（改変・要約・省略・補足 一切禁止）
+3. "text" は下記テキスト内に実際に存在する連続した文字列のみ（存在しない文字列は絶対に作らない）
+4. 除外リストに該当するものは絶対に指摘しない
+5. Aを最優先で探す。次にB、C、D、Eの順
 
-【記事テキスト】
-{text[:8000]}"""
+{section_note}
+{text_chunk}"""
 
-    def _call_groq():
+
+async def _call_groq_once(
+    client: Groq,
+    text_chunk: str,
+    url: str,
+    trademark_hint: str,
+    section_label: str = "",
+) -> dict:
+    prompt = _build_analysis_prompt(text_chunk, url, trademark_hint, section_label)
+
+    def _call():
         return client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=4096,
         )
 
-    response = await asyncio.to_thread(_call_groq)
+    response = await asyncio.to_thread(_call)
     response_text = response.choices[0].message.content
 
     parsers = [
@@ -242,7 +238,41 @@ E. 購買・参加を妨げる営業妨害表現
         except Exception:
             continue
 
-    return {"article_title": "記事", "trademark": trademark or "商標", "violations": []}
+    return {"article_title": "記事", "trademark": "", "violations": []}
+
+
+async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
+    api_key = os.environ.get("GROQ_API_KEY", "")
+    if not api_key:
+        raise HTTPException(500, "GROQ_API_KEY が設定されていません。")
+
+    client = Groq(api_key=api_key)
+    trademark_hint = (
+        f"なお、ユーザーより対象商標として「{trademark}」が指定されています。"
+        if trademark else ""
+    )
+
+    CHUNK = 10000
+
+    if len(text) <= CHUNK:
+        # 短い記事：1回で解析
+        return await _call_groq_once(client, text, url, trademark_hint)
+
+    # 長い記事：前半・後半を並列解析してマージ
+    chunk1 = text[:CHUNK]
+    chunk2 = text[CHUNK : CHUNK * 2]
+
+    r1, r2 = await asyncio.gather(
+        _call_groq_once(client, chunk1, url, trademark_hint, "前半"),
+        _call_groq_once(client, chunk2, url, trademark_hint, "後半"),
+    )
+
+    violations = r1.get("violations", []) + r2.get("violations", [])
+    return {
+        "article_title": r1.get("article_title") or r2.get("article_title", "記事"),
+        "trademark": r1.get("trademark") or r2.get("trademark", trademark or "商標"),
+        "violations": violations,
+    }
 
 
 async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
@@ -310,25 +340,36 @@ def _normalize_search_text(text: str) -> str:
     return text.strip()
 
 
+def _best_rect(rects: list, page_height: float) -> fitz.Rect:
+    """
+    複数のマッチ候補から最適な1件を返す。
+    優先順位: ① ページ上部100pt以外かつ下部30pt以外の本文領域
+              ② それ以外ならy座標が最も大きい（最初の本文に近い）もの
+    """
+    body = [r for r in rects if r.y0 > 100 and r.y1 < page_height - 30]
+    candidates = body if body else rects
+    return min(candidates, key=lambda r: r.y0)
+
+
 def _search_text_in_page(page: fitz.Page, normalized_text: str) -> fitz.Rect | None:
     """
     ページ内でテキストを検索して座標を返す。
-    方法1: search_for（高速）
+    方法1: search_for（高速・複数候補から本文優先）
     方法2: 文字単位の座標マッチング（Playwright生成PDFの日本語対応）
     """
-    # ── 方法1: search_for（空白正規化済みの候補で試す） ──
-    for length in [len(normalized_text), 30, 20, 15, 10]:
+    ph = page.rect.height
+
+    # ── 方法1: search_for ──
+    for length in [len(normalized_text), 40, 30, 20, 15, 10]:
         cand = normalized_text[:length].strip()
         if len(cand) < 4:
             continue
         rects = page.search_for(cand, quads=False)
         if rects:
-            return rects[0]
+            return _best_rect(rects, ph)
 
     # ── 方法2: rawdict で文字単位の位置マッチング ──
-    # Playwright生成PDFでは文字間にスペースが混入し search_for が失敗するため、
-    # 個々の文字座標を取得してスペースなしで文字列照合する
-    target_nospace = re.sub(r'\s+', '', normalized_text)[:30]
+    target_nospace = re.sub(r'\s+', '', normalized_text)[:40]
     if len(target_nospace) < 4:
         return None
 
@@ -341,7 +382,7 @@ def _search_text_in_page(page: fitz.Page, normalized_text: str) -> fitz.Rect | N
                 for span in line.get("spans", []):
                     for ch in span.get("chars", []):
                         c = unicodedata.normalize("NFKC", ch["c"])
-                        if not c.strip():   # 空白はスキップ
+                        if not c.strip():
                             continue
                         all_chars.append({"c": c, "bbox": ch["bbox"]})
 
@@ -349,28 +390,32 @@ def _search_text_in_page(page: fitz.Page, normalized_text: str) -> fitz.Rect | N
             return None
 
         page_str = "".join(ch["c"] for ch in all_chars)
-        idx = page_str.find(target_nospace)
-        if idx < 0:
-            # 短くして再試行
-            for trim in [30, 20, 12, 8]:
-                short = target_nospace[:trim]
-                idx = page_str.find(short)
-                if idx >= 0:
-                    target_nospace = short
+
+        # 全出現箇所を収集して最適候補を選ぶ
+        for trim in [len(target_nospace), 40, 30, 20, 12, 8]:
+            short = target_nospace[:trim]
+            if len(short) < 4:
+                continue
+
+            occurrences = []
+            start = 0
+            while True:
+                idx = page_str.find(short, start)
+                if idx < 0:
                     break
+                matched = all_chars[idx: idx + len(short)]
+                if matched:
+                    x0 = min(c["bbox"][0] for c in matched)
+                    y0 = min(c["bbox"][1] for c in matched)
+                    x1 = max(c["bbox"][2] for c in matched)
+                    y1 = max(c["bbox"][3] for c in matched)
+                    occurrences.append(fitz.Rect(x0, y0, x1, y1))
+                start = idx + 1
 
-        if idx < 0:
-            return None
+            if occurrences:
+                return _best_rect(occurrences, ph)
 
-        matched = all_chars[idx: idx + len(target_nospace)]
-        if not matched:
-            return None
-
-        x0 = min(c["bbox"][0] for c in matched)
-        y0 = min(c["bbox"][1] for c in matched)
-        x1 = max(c["bbox"][2] for c in matched)
-        y1 = max(c["bbox"][3] for c in matched)
-        return fitz.Rect(x0, y0, x1, y1)
+        return None
 
     except Exception:
         return None
