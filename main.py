@@ -174,12 +174,13 @@ D. 匿名・出典不明の否定情報を事実として断定
 E. 購買・参加を妨げる営業妨害表現
    例：「絶対に買うな」「手を出すな」「登録前に必ずこれを読め」
 
-【指摘しないもの（除外リスト）】
-- ナビゲーション・メニュー・パンくずリスト・タグ・カテゴリ名
-- 著者名・日付・サイト名・URL・SNSシェアボタン等のメタ情報
-- 「この記事では〜を解説します」などの中立的な導入文
-- 事実に基づく客観的説明や一般的な注意喚起（根拠や出典がある場合）
-- 単なる感想・意見・疑問形表現（断定していない場合）
+【指摘しないもの（絶対除外）】
+- ナビゲーション・メニュー・パンくずリスト・タグ・カテゴリ名・サイト名・サイトロゴ
+- 著者名・日付・更新日・URL・SNSシェアボタン・コピーライト表示
+- 「この記事では〜を解説します」「〜について説明します」などの中立的な導入文
+- 商標名・人名・サービス名を単体で列挙しているだけの箇所（問題のある述語を伴わない場合）
+- 事実に基づく客観的説明（根拠・出典がある場合）
+- 単なる感想・意見・疑問形（「〜でしょうか」「〜と思います」など断定していない場合）
 
 以下のJSON形式のみで返してください（前置き・補足・コードブロック一切不要）：
 
@@ -188,7 +189,7 @@ E. 購買・参加を妨げる営業妨害表現
   "trademark": "この記事が攻撃している商標・サービス名または人名（最重要な1つ）",
   "violations": [
     {{
-      "text": "問題のある記述（以下のテキストから10〜30文字を一字一句そのまま抜粋）",
+      "text": "問題のある文節（下記テキストから20〜35文字を一字一句そのまま抜粋）",
       "type": "A/B/C/D/E のどれか",
       "explanation": "なぜ名誉毀損・信用毀損・業務妨害にあたるか。削除申請書に転用できる法的表現で2文以内で説明。"
     }}
@@ -196,11 +197,14 @@ E. 購買・参加を妨げる営業妨害表現
 }}
 
 【絶対に守るルール】
-1. violations は10〜15件出力する（上記テキスト内に存在する問題箇所のみ）
-2. "text" は下記テキストから10〜30文字を一字一句そのまま引用（改変・要約・省略・補足 一切禁止）
-3. "text" は下記テキスト内に実際に存在する連続した文字列のみ（存在しない文字列は絶対に作らない）
-4. 除外リストに該当するものは絶対に指摘しない
-5. Aを最優先で探す。次にB、C、D、Eの順
+1. violations は10〜15件出力する（下記テキスト内に存在する問題箇所のみ）
+2. "text" は下記テキストから20〜35文字を一字一句そのまま引用（改変・要約・省略・補足 一切禁止）
+3. "text" は主語・述語・問題となる断定表現をセットで含む文節にすること（キーワード単体は禁止）
+   良い例：「○○は完全に詐欺であり被害者が続出している」
+   悪い例：「詐欺」「○○」「サービス名」だけを引用
+4. "text" は下記テキスト内に実際に存在する連続した文字列のみ（存在しない文字列は絶対に作らない）
+5. 絶対除外リストに該当するものは絶対に指摘しない
+6. Aを最優先で探す。次にB、C、D、Eの順
 
 {section_note}
 {text_chunk}"""
@@ -343,10 +347,11 @@ def _normalize_search_text(text: str) -> str:
 def _best_rect(rects: list, page_height: float) -> fitz.Rect:
     """
     複数のマッチ候補から最適な1件を返す。
-    優先順位: ① ページ上部100pt以外かつ下部30pt以外の本文領域
-              ② それ以外ならy座標が最も大きい（最初の本文に近い）もの
+    優先順位: ① ページ上部150pt以外かつ下部50pt以外の本文領域
+              ② それ以外ならy座標が最も大きい（本文に最も近い）もの
+    ページ上部はヘッダー・ナビゲーション・パンくずリストが集中するため除外する。
     """
-    body = [r for r in rects if r.y0 > 100 and r.y1 < page_height - 30]
+    body = [r for r in rects if r.y0 > 150 and r.y1 < page_height - 50]
     candidates = body if body else rects
     return min(candidates, key=lambda r: r.y0)
 
@@ -360,10 +365,12 @@ def _search_text_in_page(page: fitz.Page, normalized_text: str) -> fitz.Rect | N
     ph = page.rect.height
 
     # ── 方法1: search_for ──
-    for length in [len(normalized_text), 40, 30, 20, 15, 10]:
+    # 短い文字列ほどナビゲーション等への誤マッチが増えるため、
+    # 最短でも12文字までしか短縮しない
+    for length in [len(normalized_text), 40, 30, 20, 15, 12]:
         cand = normalized_text[:length].strip()
-        if len(cand) < 4:
-            continue
+        if len(cand) < 8:
+            break
         rects = page.search_for(cand, quads=False)
         if rects:
             return _best_rect(rects, ph)
@@ -392,10 +399,11 @@ def _search_text_in_page(page: fitz.Page, normalized_text: str) -> fitz.Rect | N
         page_str = "".join(ch["c"] for ch in all_chars)
 
         # 全出現箇所を収集して最適候補を選ぶ
-        for trim in [len(target_nospace), 40, 30, 20, 12, 8]:
+        # 最短でも12文字まで：短すぎるとナビゲーション等に誤マッチする
+        for trim in [len(target_nospace), 40, 30, 20, 15, 12]:
             short = target_nospace[:trim]
-            if len(short) < 4:
-                continue
+            if len(short) < 8:
+                break
 
             occurrences = []
             start = 0
