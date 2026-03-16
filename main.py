@@ -242,7 +242,7 @@ async def _call_gemini_once(
     api_key = os.environ["GEMINI_API_KEY"]
     endpoint = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.0-flash-lite:generateContent?key={api_key}"
+        f"gemini-1.5-flash:generateContent?key={api_key}"
     )
     prompt = _build_analysis_prompt(text_chunk, url, trademark_hint, section_label)
     payload = _json.dumps({
@@ -265,11 +265,17 @@ async def _call_gemini_once(
     except Exception as e:
         err = str(e)
         import sys
-        print(f"[Gemini Error] {err}", flush=True, file=sys.stderr)
+        body = ""
+        if hasattr(e, "read"):
+            try:
+                body = e.read().decode()[:300]
+            except Exception:
+                pass
+        print(f"[Gemini Error] {err} | body={body}", flush=True, file=sys.stderr)
         if "429" in err:
-            raise HTTPException(429, f"Gemini APIレート制限: {err[:200]}")
+            raise HTTPException(429, f"Gemini APIレート制限: {body or err[:200]}")
         if "400" in err or "API_KEY_INVALID" in err:
-            raise HTTPException(400, f"Gemini APIキーエラー: {err[:200]}")
+            raise HTTPException(400, f"Gemini APIキーエラー: {body or err[:200]}")
         raise HTTPException(500, f"Gemini APIエラー: {err[:200]}")
     text = result["candidates"][0]["content"]["parts"][0]["text"]
     return _parse_ai_response(text)
@@ -351,7 +357,7 @@ async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
 
     endpoint = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.0-flash-lite:generateContent?key={api_key}"
+        f"gemini-1.5-flash:generateContent?key={api_key}"
     )
     payload = _json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
