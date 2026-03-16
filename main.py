@@ -308,11 +308,22 @@ async def _analyze_once(
     section_label: str = "",
 ) -> dict:
     """Gemini優先・Groqフォールバックで1チャンクを解析する。"""
-    if os.environ.get("GEMINI_API_KEY"):
-        return await _call_gemini_once(text_chunk, url, trademark_hint, section_label)
+    gemini_key = os.environ.get("GEMINI_API_KEY", "")
     groq_key = os.environ.get("GROQ_API_KEY", "")
-    if not groq_key:
+
+    if not gemini_key and not groq_key:
         raise HTTPException(500, "GEMINI_API_KEY または GROQ_API_KEY を Railway の環境変数に設定してください。")
+
+    # Geminiを試みる
+    if gemini_key:
+        try:
+            return await _call_gemini_once(text_chunk, url, trademark_hint, section_label)
+        except HTTPException as e:
+            if e.status_code != 429 or not groq_key:
+                raise
+            # Gemini 429 → Groqにフォールバック
+
+    # Groqにフォールバック
     return await _call_groq_once(Groq(api_key=groq_key), text_chunk, url, trademark_hint, section_label)
 
 
