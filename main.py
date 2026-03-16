@@ -280,7 +280,7 @@ async def _call_groq_once(
 
     def _call():
         return client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama3-70b-8192",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=4096,
         )
@@ -368,7 +368,7 @@ async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
 
     def _call():
         return client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
+            model="llama3-70b-8192",
             messages=[{"role": "user", "content": prompt}],
             max_tokens=512,
         )
