@@ -168,20 +168,19 @@ async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
 }}
 
 重要なルール：
-- violationsは必ず15件以上20件以下で返してください（10件以下は絶対に不可）
+- violationsは10件以上15件以下で返してください
 - "text"は必ず記事中に実在するテキストをそのまま引用してください（変形・要約禁止）
 - 強く言える指摘（根拠不十分な断定、社会的評価低下、営業信用毀損）を優先してください
 - 補助的な指摘（一方的表現、中立性の欠如）は後半にまとめてください
-- 15件未満で止まることは許可されていません。必ず15〜20件出力してください
 
-【記事テキスト（最大12000文字）】
-{text[:12000]}"""
+【記事テキスト（最大8000文字）】
+{text[:8000]}"""
 
     def _call_groq():
         return client.chat.completions.create(
             model="llama-3.3-70b-versatile",
             messages=[{"role": "user", "content": prompt}],
-            max_tokens=8192,
+            max_tokens=4096,
         )
 
     response = await asyncio.to_thread(_call_groq)
