@@ -264,7 +264,8 @@ async def _call_gemini_once(
         result = await asyncio.to_thread(_call)
     except Exception as e:
         err = str(e)
-        print(f"[Gemini Error] {err}")  # Railwayログに詳細を出力
+        import sys
+        print(f"[Gemini Error] {err}", flush=True, file=sys.stderr)
         if "429" in err:
             raise HTTPException(429, f"Gemini APIレート制限: {err[:200]}")
         if "400" in err or "API_KEY_INVALID" in err:
@@ -987,6 +988,8 @@ async def debug_session(session_id: str):
 
 @app.post("/api/analyze")
 async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
+    import sys
+    print(f"[analyze] URL={request.url}", flush=True, file=sys.stderr)
     if not validate_url(request.url):
         raise HTTPException(400, "無効なURLです。http/https のURLを入力してください。")
 
