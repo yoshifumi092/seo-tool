@@ -305,16 +305,22 @@ def _search_text_in_page(page: fitz.Page, normalized_text: str) -> fitz.Rect | N
 
 
 def find_violation_positions(pdf_path: str, violations: list) -> list:
-    """各違反テキストのPDF上の座標を検索する（リスト形式で返す）。"""
+    """各違反テキストのPDF上の座標を検索する（リスト形式で返す）。
+    テキストが見つからない場合でも必ずページ0に配置する。
+    """
     doc = fitz.open(pdf_path)
+    page_count = len(doc)
+    page_widths  = [doc[p].rect.width  for p in range(page_count)]
+    page_heights = [doc[p].rect.height for p in range(page_count)]
     positions = []
+    not_found_count = 0  # 見つからなかった件数（フォールバック位置計算用）
 
     for i, v in enumerate(violations):
         raw_text = v.get("text", "")
         normalized = _normalize_search_text(raw_text)
         found = False
 
-        for page_num in range(len(doc)):
+        for page_num in range(page_count):
             page = doc[page_num]
             rect = _search_text_in_page(page, normalized)
             if rect:
@@ -330,14 +336,25 @@ def find_violation_positions(pdf_path: str, violations: list) -> list:
                 break
 
         if not found:
+            # テキストが見つからなくても必ずページ0に配置する
+            # （ユーザーが手動でドラッグして正しい位置に移動できる）
+            pw = page_widths[0] if page_widths else 595
+            row = not_found_count % 10
+            col = not_found_count // 10
+            fx0 = 10.0 + col * 200
+            fy0 = 20.0 + row * 50
+            fx1 = min(fx0 + 180, pw - 5)
+            fy1 = fy0 + 18
             positions.append({
-                "page_num": -1,
-                "rect": None,
+                "page_num": 0,
+                "rect": [fx0, fy0, fx1, fy1],
                 "number": i + 1,
                 "type": v.get("type", ""),
                 "explanation": v.get("explanation", ""),
                 "text": raw_text,
+                "auto_placed": True,  # 自動配置フラグ
             })
+            not_found_count += 1
 
     doc.close()
     return positions

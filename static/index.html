@@ -795,10 +795,12 @@ function redrawCanvas(pageIdx, preview) {
     const b1 = pdfToBrowser(x1, y1, pi);
     const w = b1.bx - b0.bx, h = b1.by - b0.by;
 
-    ctx.strokeStyle = "rgba(204,0,0,0.9)";
+    // 自動配置（テキスト未検出）はオレンジ枠で区別
+    const isAuto = v.auto_placed;
+    ctx.strokeStyle = isAuto ? "rgba(220,120,0,0.9)" : "rgba(204,0,0,0.9)";
     ctx.lineWidth = 2.5;
     ctx.strokeRect(b0.bx, b0.by, w, h);
-    ctx.fillStyle = "rgba(204,0,0,0.06)";
+    ctx.fillStyle = isAuto ? "rgba(220,120,0,0.06)" : "rgba(204,0,0,0.06)";
     ctx.fillRect(b0.bx, b0.by, w, h);
 
     // 番号ラベル（ブラウザ編集時のみ表示）
