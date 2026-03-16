@@ -256,7 +256,15 @@ async def _call_gemini_once(
         with urllib.request.urlopen(req, timeout=60) as resp:
             return _json.loads(resp.read())
 
-    result = await asyncio.to_thread(_call)
+    try:
+        result = await asyncio.to_thread(_call)
+    except Exception as e:
+        err = str(e)
+        if "429" in err:
+            raise HTTPException(429, "Gemini APIの無料枠の上限に達しました。1分ほど待ってから再試行してください。")
+        if "400" in err or "API_KEY_INVALID" in err:
+            raise HTTPException(400, "Gemini APIキーが無効です。RailwayのGEMINI_API_KEYを確認してください。")
+        raise
     text = result["candidates"][0]["content"]["parts"][0]["text"]
     return _parse_ai_response(text)
 
@@ -322,14 +330,13 @@ async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
     if len(text) <= CHUNK:
         return await _analyze_once(text, url, trademark_hint)
 
-    # 長い記事：前半・後半を並列解析してマージ
+    # 長い記事：前半→後半を順番に解析してマージ（並列だとレート制限に引っかかる）
     chunk1 = text[:CHUNK]
     chunk2 = text[CHUNK : CHUNK * 2]
 
-    r1, r2 = await asyncio.gather(
-        _analyze_once(chunk1, url, trademark_hint, "前半"),
-        _analyze_once(chunk2, url, trademark_hint, "後半"),
-    )
+    r1 = await _analyze_once(chunk1, url, trademark_hint, "前半")
+    await asyncio.sleep(2)  # レート制限対策
+    r2 = await _analyze_once(chunk2, url, trademark_hint, "後半")
 
     violations = r1.get("violations", []) + r2.get("violations", [])
     return {
