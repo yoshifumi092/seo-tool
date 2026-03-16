@@ -168,13 +168,14 @@ async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
 }}
 
 重要なルール：
-- violationsは最低5件、可能なら10〜20件、主張の強い順に並べてください
+- violationsは必ず15件以上20件以下で返してください（10件以下は絶対に不可）
 - "text"は必ず記事中に実在するテキストをそのまま引用してください（変形・要約禁止）
 - 強く言える指摘（根拠不十分な断定、社会的評価低下、営業信用毀損）を優先してください
 - 補助的な指摘（一方的表現、中立性の欠如）は後半にまとめてください
+- 15件未満で止まることは許可されていません。必ず15〜20件出力してください
 
-【記事テキスト（最大8000文字）】
-{text[:8000]}"""
+【記事テキスト（最大12000文字）】
+{text[:12000]}"""
 
     def _call_groq():
         return client.chat.completions.create(
@@ -267,6 +268,42 @@ def _normalize_search_text(text: str) -> str:
     return text.strip()
 
 
+def _search_text_in_page(page: fitz.Page, normalized_text: str) -> fitz.Rect | None:
+    """
+    ページ内でテキストを検索する。
+    1) search_for（PyMuPDF組み込み、空白正規化あり）
+    2) get_text("blocks") を使ったPythonレベルの部分一致 → ブロックRectを返す
+    """
+    # ── 方法1: search_for で候補の長さを変えながら試す ──
+    for length in [len(normalized_text), 80, 60, 40, 20, 12, 8]:
+        cand = normalized_text[:length].strip()
+        if len(cand) < 5:
+            continue
+        rects = page.search_for(cand, quads=False)
+        if rects:
+            return rects[0]
+
+    # ── 方法2: Pythonレベルのテキストブロック部分一致 ──
+    # get_text("blocks") はPDF内のテキストブロックを座標付きで返す
+    for length in range(min(len(normalized_text), 40), 4, -2):
+        fragment = normalized_text[:length].strip()
+        if len(fragment) < 5:
+            continue
+        for b in page.get_text("blocks"):
+            if b[6] != 0:  # テキストブロック以外はスキップ
+                continue
+            block_text = _normalize_search_text(b[4])
+            if fragment in block_text:
+                # ブロック内でさらに正確な位置を取得（短い文字列で再試行）
+                precise = page.search_for(fragment[:20], quads=False)
+                if precise:
+                    return precise[0]
+                # 正確な位置が取れなければブロックRectを使う
+                return fitz.Rect(b[0], b[1], b[2], b[3])
+
+    return None
+
+
 def find_violation_positions(pdf_path: str, violations: list) -> list:
     """各違反テキストのPDF上の座標を検索する（リスト形式で返す）。"""
     doc = fitz.open(pdf_path)
@@ -277,32 +314,19 @@ def find_violation_positions(pdf_path: str, violations: list) -> list:
         normalized = _normalize_search_text(raw_text)
         found = False
 
-        # 試みる長さ: 正規化テキスト, 80, 60, 40, 20, 10文字
-        for length in [len(normalized), 80, 60, 40, 20, 10]:
-            candidate = normalized[:length].strip()
-            if len(candidate) < 5:
-                continue
-            for page_num in range(len(doc)):
-                page = doc[page_num]
-                rects = page.search_for(candidate, quads=False)
-                if not rects:
-                    # 空白を除いて再試行（PDF内でテキストが途中改行されている場合）
-                    compact = re.sub(r'\s+', '', candidate)
-                    if len(compact) >= 5:
-                        rects = page.search_for(compact[:20], quads=False)
-                if rects:
-                    r = rects[0]
-                    positions.append({
-                        "page_num": page_num,
-                        "rect": [r.x0, r.y0, r.x1, r.y1],
-                        "number": i + 1,
-                        "type": v.get("type", ""),
-                        "explanation": v.get("explanation", ""),
-                        "text": raw_text,
-                    })
-                    found = True
-                    break
-            if found:
+        for page_num in range(len(doc)):
+            page = doc[page_num]
+            rect = _search_text_in_page(page, normalized)
+            if rect:
+                positions.append({
+                    "page_num": page_num,
+                    "rect": [rect.x0, rect.y0, rect.x1, rect.y1],
+                    "number": i + 1,
+                    "type": v.get("type", ""),
+                    "explanation": v.get("explanation", ""),
+                    "text": raw_text,
+                })
+                found = True
                 break
 
         if not found:
@@ -732,6 +756,30 @@ class UpdateViolationRequest(BaseModel):
 @app.get("/")
 async def root():
     return FileResponse("static/index.html")
+
+
+@app.get("/api/debug/{session_id}")
+async def debug_session(session_id: str):
+    """デバッグ用：セッションの違反データを確認する。"""
+    session = sessions.get(session_id)
+    if not session:
+        raise HTTPException(404, "セッションが見つかりません。")
+    violations = session.get("violations", [])
+    return {
+        "session_id": session_id,
+        "page_count": session.get("page_count"),
+        "violation_count": len(violations),
+        "violations_summary": [
+            {
+                "number": v.get("number"),
+                "page_num": v.get("page_num"),
+                "has_rect": v.get("rect") is not None,
+                "rect": v.get("rect"),
+                "text_preview": (v.get("text") or "")[:40],
+            }
+            for v in violations
+        ],
+    }
 
 
 @app.post("/api/analyze")
