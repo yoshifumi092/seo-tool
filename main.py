@@ -264,11 +264,12 @@ async def _call_gemini_once(
         result = await asyncio.to_thread(_call)
     except Exception as e:
         err = str(e)
+        print(f"[Gemini Error] {err}")  # Railwayログに詳細を出力
         if "429" in err:
-            raise HTTPException(429, "Gemini APIの無料枠の上限に達しました。1分ほど待ってから再試行してください。")
+            raise HTTPException(429, f"Gemini APIレート制限: {err[:200]}")
         if "400" in err or "API_KEY_INVALID" in err:
-            raise HTTPException(400, "Gemini APIキーが無効です。RailwayのGEMINI_API_KEYを確認してください。")
-        raise
+            raise HTTPException(400, f"Gemini APIキーエラー: {err[:200]}")
+        raise HTTPException(500, f"Gemini APIエラー: {err[:200]}")
     text = result["candidates"][0]["content"]["parts"][0]["text"]
     return _parse_ai_response(text)
 
