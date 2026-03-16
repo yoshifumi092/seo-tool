@@ -232,16 +232,33 @@ async def _call_gemini_once(
     trademark_hint: str,
     section_label: str = "",
 ) -> dict:
-    import google.generativeai as genai
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    import urllib.request
+    import json as _json
+
+    api_key = os.environ["GEMINI_API_KEY"]
+    endpoint = (
+        "https://generativelanguage.googleapis.com/v1beta/models/"
+        f"gemini-1.5-flash:generateContent?key={api_key}"
+    )
     prompt = _build_analysis_prompt(text_chunk, url, trademark_hint, section_label)
+    payload = _json.dumps({
+        "contents": [{"parts": [{"text": prompt}]}],
+        "generationConfig": {"maxOutputTokens": 4096},
+    }).encode()
 
     def _call():
-        return model.generate_content(prompt)
+        req = urllib.request.Request(
+            endpoint,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            return _json.loads(resp.read())
 
-    response = await asyncio.to_thread(_call)
-    return _parse_ai_response(response.text)
+    result = await asyncio.to_thread(_call)
+    text = result["candidates"][0]["content"]["parts"][0]["text"]
+    return _parse_ai_response(text)
 
 
 async def _call_groq_once(

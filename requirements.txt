@@ -3,6 +3,5 @@ uvicorn[standard]
 playwright
 pymupdf
 groq
-google-generativeai
 python-multipart
 aiofiles
