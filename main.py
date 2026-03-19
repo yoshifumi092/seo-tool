@@ -277,7 +277,16 @@ async def _call_gemini_once(
         if "400" in err or "API_KEY_INVALID" in err:
             raise HTTPException(400, f"Gemini APIキーエラー: {body or err[:200]}")
         raise HTTPException(500, f"Gemini APIエラー: {err[:200]}")
-    text = result["candidates"][0]["content"]["parts"][0]["text"]
+    # Gemini 2.5系は思考トークンが先頭のpartに入るため、JSONを含むpartを探す
+    parts = result["candidates"][0]["content"]["parts"]
+    text = ""
+    for part in parts:
+        t = part.get("text", "")
+        if "{" in t:
+            text = t
+            break
+    if not text:
+        text = parts[0].get("text", "")
     return _parse_ai_response(text)
 
 
