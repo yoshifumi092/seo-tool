@@ -615,6 +615,9 @@ async function startAnalyze() {
     clearTimeout(msgTimer);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
+      if (res.status === 429) {
+        throw new Error("⚠️ AI APIの無料利用上限に達しています。\n\n【解決方法】\n① 1〜2分待ってから再試行する\n② それでも続く場合は、明日（日次リセット後）に再試行する\n③ Google AI Studio（aistudio.google.com）で新しいAPIキーを取得してRailwayに設定する");
+      }
       throw new Error(err.detail || "解析に失敗しました。");
     }
     const data = await res.json();
