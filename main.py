@@ -242,7 +242,7 @@ async def _call_gemini_once(
     api_key = os.environ["GEMINI_API_KEY"]
     endpoint = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.0-flash:generateContent?key={api_key}"
+        f"gemini-2.0-flash-lite:generateContent?key={api_key}"
     )
     prompt = _build_analysis_prompt(text_chunk, url, trademark_hint, section_label)
     payload = _json.dumps({
@@ -357,7 +357,7 @@ async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
 
     endpoint = (
         "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.0-flash:generateContent?key={api_key}"
+        f"gemini-2.0-flash-lite:generateContent?key={api_key}"
     )
     payload = _json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
