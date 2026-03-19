@@ -968,6 +968,24 @@ async def api_status():
     }
 
 
+@app.get("/api/models")
+async def list_models():
+    """利用可能なGeminiモデルを確認する。"""
+    import urllib.request
+    import json as _json
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        return {"error": "APIキー未設定"}
+    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
+    try:
+        with urllib.request.urlopen(url, timeout=10) as resp:
+            data = _json.loads(resp.read())
+        names = [m["name"] for m in data.get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
+        return {"models": names}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/debug/{session_id}")
 async def debug_session(session_id: str):
     """デバッグ用：セッションの違反データを確認する。"""
