@@ -92,28 +92,56 @@ async def url_to_pdf(url: str, output_path: str) -> None:
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-blink-features=AutomationControlled",
+                "--disable-dev-shm-usage",
+                "--disable-accelerated-2d-canvas",
+                "--no-first-run",
+                "--no-zygote",
+                "--disable-gpu",
             ]
         )
         context = await browser.new_context(
             user_agent=(
                 "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/120.0.0.0 Safari/537.36"
+                "Chrome/124.0.0.0 Safari/537.36"
             ),
-            viewport={"width": 1280, "height": 900},
+            viewport={"width": 1920, "height": 1080},
             locale="ja-JP",
+            timezone_id="Asia/Tokyo",
+            extra_http_headers={
+                "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
+            },
         )
+
+        # navigator.webdriver を隠すスクリプトを注入
+        await context.add_init_script("""
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+            Object.defineProperty(navigator, 'languages', { get: () => ['ja-JP', 'ja', 'en-US', 'en'] });
+            window.chrome = { runtime: {} };
+        """)
+
         page = await context.new_page()
 
-        # まず domcontentloaded で取得（networkidle はタイムアウトしやすい）
+        # まず domcontentloaded で取得
         try:
             await page.goto(url, wait_until="domcontentloaded", timeout=45000)
         except Exception:
-            # それでも失敗した場合は load イベントで再試行
             await page.goto(url, wait_until="load", timeout=45000)
 
-        # JS・画像の読み込みを少し待つ
-        await page.wait_for_timeout(3000)
+        # JS・画像の読み込みを待つ（少し長めに）
+        await page.wait_for_timeout(5000)
+
+        # アクセスブロック検出
+        page_text = await page.inner_text("body")
+        block_keywords = ["アクセスできません", "403", "Access Denied", "Forbidden", "blocked", "Bot detection"]
+        if any(kw.lower() in page_text.lower() for kw in block_keywords) and len(page_text.strip()) < 500:
+            await browser.close()
+            raise HTTPException(400, "このサイトはBot対策によりアクセスがブロックされました。別のURLをお試しください。")
 
         await page.pdf(
             path=output_path,
