@@ -258,7 +258,7 @@ def _build_analysis_prompt(
     {{
       "text": "問題のある記述（テキストから15〜60文字を一字一句そのまま引用）",
       "statement_type": "事実主張／意見論評／推測／印象操作　のいずれか",
-      "type": "問題類型（A〜Hの記号と名称。例：F: 根拠不明な断定）",
+      "type": "問題類型の名称のみ（記号不要。例：根拠不明な断定、商標権侵害・不正競争、名誉毀損リスク）",
       "severity": 問題の深刻度（1〜5の整数。5が最重要）,
       "confidence": "高／中／低（本文だけで問題性を説明できるか）",
       "reader_impression": "一般読者がこの表現から受ける印象（1文）",
@@ -683,7 +683,8 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
     """1件の違反を指定ページに描画する（赤枠＋注釈テキストボックス）。"""
     r = item["rect"]
     rect = fitz.Rect(r[0], r[1], r[2], r[3]) if isinstance(r, (list, tuple)) else r
-    vtype = item.get("type", "")
+    # アルファベット記号（例: "D: "）を除去
+    vtype = re.sub(r'^[A-H]:\s*', '', item.get("type", ""))
     explanation = item.get("explanation", "")
     pw, ph = page.rect.width, page.rect.height
 
