@@ -1304,12 +1304,13 @@ function renderEditorViolationList() {
 
     item.innerHTML = `
       <button class="editor-v-del" onclick="removeViolation(${i})" title="削除">✕</button>
-      <div class="editor-v-meta">
+      <div class="editor-v-meta" onclick="jumpToViolation(${i})" style="cursor:pointer;" title="記事の該当箇所へジャンプ">
         <span class="violation-num">【${v.number}】</span>
         <span class="violation-type" id="v-type-label-${i}">${escapeHtml(v.type)}</span>
         <span style="font-size:10px;color:#999;">${page}</span>
+        <span style="font-size:10px;color:#c0392b;margin-left:4px;">↗ ジャンプ</span>
       </div>
-      <div class="editor-v-text">${escapeHtml(preview)}</div>
+      <div class="editor-v-text" onclick="jumpToViolation(${i})" style="cursor:pointer;">${escapeHtml(preview)}</div>
       <div class="editor-v-exp" id="v-exp-label-${i}">${escapeHtml(v.explanation)}</div>
       <button class="editor-v-edit-btn" onclick="toggleEditArea(${i})">✎ 編集</button>
       <div class="editor-v-edit-area" id="v-edit-${i}">
@@ -1328,6 +1329,29 @@ function renderEditorViolationList() {
 }
 
 // ── 編集（文言修正） ──
+
+function jumpToViolation(idx) {
+  const v = editor.violations[idx];
+  if (!v || v.page_num < 0) return;
+  const pi = editor.pages[v.page_num];
+  if (!pi || !pi.wrapEl) return;
+
+  // ページラッパーへスクロール
+  pi.wrapEl.scrollIntoView({ behavior: "smooth", block: "center" });
+
+  // 対応する注釈ラベルをハイライト
+  setTimeout(() => {
+    const annLabel = document.querySelector(`.ann-label[data-idx="${idx}"]`);
+    if (annLabel) {
+      annLabel.style.outline = "3px solid #e74c3c";
+      annLabel.style.boxShadow = "0 0 12px rgba(231,76,60,0.7)";
+      setTimeout(() => {
+        annLabel.style.outline = "";
+        annLabel.style.boxShadow = "";
+      }, 2000);
+    }
+  }, 400);
+}
 
 function toggleEditArea(idx) {
   const area = document.getElementById(`v-edit-${idx}`);
