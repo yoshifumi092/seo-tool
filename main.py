@@ -298,7 +298,7 @@ async def _call_gemini_once(
     prompt = _build_analysis_prompt(text_chunk, url, trademark_hint, section_label)
     payload = _json.dumps({
         "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"maxOutputTokens": 4096},
+        "generationConfig": {"maxOutputTokens": 16000},
     }).encode()
 
     def _call():
