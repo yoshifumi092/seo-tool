@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: seo-tool
+    runtime: docker
+    plan: free
+    envVars:
+      - key: GEMINI_API_KEY
+        sync: false
+    healthCheckPath: /api/status
