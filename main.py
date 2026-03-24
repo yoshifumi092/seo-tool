@@ -294,26 +294,41 @@ async def _call_gemini_once(
         if "400" in err or "API_KEY_INVALID" in err:
             raise HTTPException(400, f"Gemini APIキーエラー: {body or err[:200]}")
         raise HTTPException(500, f"Gemini APIエラー: {err[:200]}")
-    # Gemini 2.5系は思考トークンが先頭のpartに入るため、有効なJSONを含むpartを探す
-    # thought=True のpartはスキップし、JSON parseできるpartを優先する
+    # Gemini 2.5系レスポンス解析: 複数のpartから有効なJSONを探す
+    import sys as _sys
     parts = result["candidates"][0]["content"]["parts"]
+    print(f"[Gemini] parts count={len(parts)}, keys={[list(p.keys()) for p in parts]}", flush=True, file=_sys.stderr)
+
     text = ""
+    # 優先1: thought=Trueでなく "violations" を含むpart
     for part in parts:
         if part.get("thought"):
             continue
         t = part.get("text", "")
-        if t:
+        if '"violations"' in t:
             text = t
             break
-    # フォールバック: thought以外のpartがなければ{を含むpartを探す
+    # 優先2: thought=Trueでない最初のpart
+    if not text:
+        for part in parts:
+            if part.get("thought"):
+                continue
+            t = part.get("text", "")
+            if t:
+                text = t
+                break
+    # 優先3: "violations" を含む任意のpart
     if not text:
         for part in parts:
             t = part.get("text", "")
-            if "{" in t and "violations" in t:
+            if '"violations"' in t:
                 text = t
                 break
+    # 最終: 最後のpart
     if not text and parts:
         text = parts[-1].get("text", "")
+
+    print(f"[Gemini] selected text (first 200): {text[:200]}", flush=True, file=_sys.stderr)
     return _parse_ai_response(text)
 
 
