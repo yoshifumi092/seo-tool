@@ -362,8 +362,10 @@ async def _call_gemini_once(
     if not text and parts:
         text = parts[-1].get("text", "")
 
-    print(f"[Gemini] selected text (first 200): {text[:200]}", flush=True, file=_sys.stderr)
-    return _parse_ai_response(text)
+    print(f"[Gemini] selected text (first 500): {text[:500]}", flush=True, file=_sys.stderr)
+    parsed = _parse_ai_response(text)
+    print(f"[Gemini] parsed: violations={len(parsed.get('violations', []))}, title={parsed.get('article_title','')[:30]}", flush=True, file=_sys.stderr)
+    return parsed
 
 
 async def _analyze_once(
