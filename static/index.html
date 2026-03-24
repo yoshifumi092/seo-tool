@@ -1264,19 +1264,17 @@ async function addNewArea(pageIdx, pdfRect) {
     // 追加した違反の編集フォームを自動で開く
     const newIdx = editor.violations.length - 1;
     setTimeout(() => {
-      // 注釈ラベルの編集フォームを開く
+      // 注釈ラベルの編集フォームを開く（スクロールしない：ユーザーは描いた位置にいる）
       const annLabel = document.querySelector(`.ann-label[data-idx="${newIdx}"]`);
       if (annLabel) {
         const form = annLabel.querySelector(".ann-edit-form");
         if (form) form.classList.add("open");
-        annLabel.scrollIntoView({ behavior: "smooth", block: "center" });
       } else {
         // サイドパネルの編集ボタンを開く
         const listItem = document.querySelector(`[data-violation-idx="${newIdx}"]`);
         if (listItem) {
           const editBtn = listItem.querySelector(".edit-btn");
           if (editBtn) editBtn.click();
-          listItem.scrollIntoView({ behavior: "smooth", block: "center" });
         }
       }
     }, 300);
