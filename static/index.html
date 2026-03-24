@@ -985,8 +985,13 @@ function makeDraggable(el, violationIdx, pageIdx) {
     el.style.zIndex = 20;
 
     const onMove = (me) => {
-      el.style.left = (startLeft + me.clientX - startX) + "px";
-      el.style.top  = (startTop  + me.clientY - startY) + "px";
+      const pi = editor.pages[pageIdx];
+      const maxW = pi ? pi.imgEl.clientWidth  - el.offsetWidth  : 9999;
+      const maxH = pi ? pi.imgEl.clientHeight - el.offsetHeight : 9999;
+      const newLeft = Math.max(0, Math.min(startLeft + me.clientX - startX, maxW));
+      const newTop  = Math.max(0, Math.min(startTop  + me.clientY - startY, maxH));
+      el.style.left = newLeft + "px";
+      el.style.top  = newTop  + "px";
     };
 
     const onUp = async () => {
