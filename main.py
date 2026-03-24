@@ -277,16 +277,26 @@ async def _call_gemini_once(
         if "400" in err or "API_KEY_INVALID" in err:
             raise HTTPException(400, f"Gemini APIキーエラー: {body or err[:200]}")
         raise HTTPException(500, f"Gemini APIエラー: {err[:200]}")
-    # Gemini 2.5系は思考トークンが先頭のpartに入るため、JSONを含むpartを探す
+    # Gemini 2.5系は思考トークンが先頭のpartに入るため、有効なJSONを含むpartを探す
+    # thought=True のpartはスキップし、JSON parseできるpartを優先する
     parts = result["candidates"][0]["content"]["parts"]
     text = ""
     for part in parts:
+        if part.get("thought"):
+            continue
         t = part.get("text", "")
-        if "{" in t:
+        if t:
             text = t
             break
+    # フォールバック: thought以外のpartがなければ{を含むpartを探す
     if not text:
-        text = parts[0].get("text", "")
+        for part in parts:
+            t = part.get("text", "")
+            if "{" in t and "violations" in t:
+                text = t
+                break
+    if not text and parts:
+        text = parts[-1].get("text", "")
     return _parse_ai_response(text)
 
 
@@ -383,7 +393,18 @@ async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
 
     try:
         result = await asyncio.to_thread(_call)
-        response_text = result["candidates"][0]["content"]["parts"][0]["text"]
+        # Gemini 2.5思考モデル対応: thought=TrueのpartをスキップしてJSONを含むpartを探す
+        parts = result["candidates"][0]["content"]["parts"]
+        response_text = ""
+        for part in parts:
+            if part.get("thought"):
+                continue
+            t = part.get("text", "")
+            if t:
+                response_text = t
+                break
+        if not response_text and parts:
+            response_text = parts[-1].get("text", "")
         parsers = [
             lambda t: json.loads(t),
             lambda t: json.loads(re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", t).group(1)),
