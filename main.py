@@ -260,14 +260,20 @@ def _build_analysis_prompt(
 
 
 def _parse_ai_response(response_text: str) -> dict:
+    # コードブロックマーカーを先に除去してからパース
+    text = response_text.strip()
+    if text.startswith("```"):
+        text = re.sub(r'^```(?:json)?\s*', '', text)
+        text = re.sub(r'\s*```\s*$', '', text)
+        text = text.strip()
+
     parsers = [
         lambda t: json.loads(t),
-        lambda t: json.loads(re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", t).group(1)),
         lambda t: json.loads(t[t.find("{") : t.rfind("}") + 1]),
     ]
     for parser in parsers:
         try:
-            result = parser(response_text)
+            result = parser(text)
             if "violations" in result:
                 return result
         except Exception:
