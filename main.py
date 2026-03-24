@@ -148,67 +148,84 @@ def _build_analysis_prompt(
     section_label: str = "",
 ) -> str:
     section_note = f"（記事テキスト {section_label}）" if section_label else "（記事テキスト）"
-    return f"""あなたは風評被害・誹謗中傷の削除申請を専門とする法務アシスタントです。
+    return f"""あなたは、記事削除申請準備のための権利侵害論点整理AIです。
 
-【背景と前提】
-以下は、第三者（競合業者・アフィリエイター等）が書いたネガティブSEO記事の一部です。
-記事の目的は対象の商標・講師・会社の評判を傷つけ、読者を競合サービスへ誘導することです。
-{trademark_hint}
+【役割】
+対象記事の中から、削除申請・修正申請・社内法務確認の材料となる具体表現を抽出し、問題性を整理する。
+感情的批判や一般論ではなく、対象記事の具体文言に基づいて冷静に出力する。
 
 【対象URL】
 {url}
+{trademark_hint}
 
-【指摘すべき問題記述】
+【分析手順】
+第1段階: 記事全体の主張・論調・構造を把握する（何を読者に信じ込ませる設計か）
+第2段階: 各文を以下の4種類に分類する
+  - 事実主張: 誰が何をした、料金・所在地・実績等の断定
+  - 意見論評: 怪しい・信頼しづらい・危険性が高い等の評価
+  - 推測: おそらく・可能性がある・かもしれない等
+  - 印象操作: 直接断定していないが読者がネガティブに受け取るよう配置された表現
+第3段階: 問題類型（A〜H）に分類する
+  A: 名誉毀損リスク（詐欺・危険・悪質等の断定またはこれに近い表現）
+  B: 信用毀損リスク（サービス品質・安全性への信頼を低下させ得る表現）
+  C: 営業妨害的表現（登録しない方がいい・絶対やめろ等の行動阻害）
+  D: 商標・ブランド毀損・出所混同（商標名を使って競合誘導）
+  E: 事実誤認（会社情報・料金・実績等が事実と異なる可能性）
+  F: 根拠不明な断定（出典・証拠なしの強い評価）
+  G: 印象操作・ミスリード（見出し・配置・引用選別による誤導）
+  H: 競合誘導・アフィリエイトバイアス（対象を下げて他サービスへ誘導）
+第4段階: 見出しと本文のズレを確認（見出しが本文より強断定の場合は重要論点）
+第5段階: 収益構造を確認（アフィリ・比較・ランキング・競合誘導の有無）
 
-① 根拠なき断定（最優先）
-   - 「詐欺」「詐欺師」「悪質」「危険」「やばい」「騙された」「被害が出ている」
-   - 「稼げない」「効果がない」「返金できない」「連絡が取れない」を証拠なく断定
-   - 上記を含む一文・一節をそのまま引用する
+【絶対禁止事項】
+- 記事に書かれていない内容を推測・補完しない
+- 法律上の最終結論を断定しない（「該当し得る」「おそれがある」「問題となり得る」を使う）
+- 感情的・糾弾的な表現を使わない
+- 件数を水増しするために弱い箇所を無理に追加しない
+- 同じ趣旨の指摘を言い換えで重複させない
+- テキスト内に存在しない文字列を引用しない
 
-② 名誉毀損
-   - 人名・商標名を使って「信用できない」「問題がある」「危険人物」と断定
-   - 「○○の正体」「○○の裏側」「○○の真実」など人格・経歴を根拠なく否定
+【指摘しないもの】
+- ナビゲーション・メニュー・パンくず・タグ・カテゴリ・コピーライト
+- 著者名・日付・SNSボタン単体
+- 「この記事では〜を紹介します」等の完全に中立な導入文
+- 商標名・人名を単体で言及するだけの箇所（問題の断定を伴わない場合）
 
-③ アフィリエイト誘導
-   - 対象を否定した直後に別サービスを「おすすめ」と紹介している文
-   - 「○○よりも△△の方が稼げる」など比較で不当に貶めている文
+【件数ルール】
+件数は固定しない。記事の内容に応じて自然に増減させること。
+- 実質的に問題性がある箇所のみを抽出する
+- 同趣旨の指摘は統合し、独立した論点は分ける
+- 問題性が弱い箇所を無理に追加しない
+- 結果として3件でも15件でもよい
 
-④ 匿名情報の断定
-   - 「〜という被害報告がある」「口コミで〜という声が多い」を根拠に悪評を断定
-   - 出典のない「体験談」を事実として記載している文
+【指摘品質の基準】
+各指摘は必ず以下の4層構造で説明すること：
+  文言 → 読者印象 → 問題の本質 → 侵害観点
 
-⑤ 営業妨害
-   - 「絶対に手を出すな」「買ってはいけない」「登録前にこれを読め」など
-   - 購入・参加を妨げる強い警告文
-
-【絶対に指摘しないもの】
-- ナビゲーション・メニュー・サイト名・ロゴ・パンくず・タグ・カテゴリ名
-- 著者名・日付・URL・SNSボタン・コピーライト
-- 「この記事では〜を紹介します」などの中立的な導入・説明文
-- 商標名・人名を単体で書いているだけの箇所（問題のある断定を伴わない場合）
-- 「〜でしょうか」「〜と思います」など断定していない感想・疑問
+悪い例: 「この表現は名誉毀損です」
+良い例: 「当該表現は、対象が著しく不誠実または危険であるとの印象を一般読者に与え得る一方、その評価を基礎づける具体的事実や客観的根拠の提示が十分ではなく、対象の社会的信用を不当に低下させるおそれがあります」
 
 以下のJSON形式のみで返してください（前置き・補足・コードブロック一切不要）：
 
 {{
   "article_title": "記事タイトル（原文のまま）",
   "trademark": "この記事が攻撃している商標・サービス名または人名",
+  "overall_tone": "記事全体の論調・読者に与える全体印象（1〜2文）",
   "violations": [
     {{
-      "text": "問題のある記述（下記テキストから15〜35文字を一字一句そのまま抜粋）",
-      "type": "根拠なき断定／名誉毀損／アフィリエイト誘導／匿名情報断定／営業妨害　のいずれか",
-      "explanation": "なぜ名誉毀損・信用毀損・業務妨害にあたるか。削除申請書に使える法的表現で2文以内。"
+      "text": "問題のある記述（テキストから15〜60文字を一字一句そのまま引用）",
+      "statement_type": "事実主張／意見論評／推測／印象操作　のいずれか",
+      "type": "問題類型（A〜Hの記号と名称。例：F: 根拠不明な断定）",
+      "severity": 問題の深刻度（1〜5の整数。5が最重要）,
+      "confidence": "高／中／低（本文だけで問題性を説明できるか）",
+      "reader_impression": "一般読者がこの表現から受ける印象（1文）",
+      "explanation": "なぜ問題か（文言→読者印象→問題本質→侵害観点の順で2〜3文）",
+      "deletion_comment": "削除申請書に転用しやすい指摘文案（法的表現で1〜2文）"
     }}
-  ]
+  ],
+  "primary_claims": ["削除申請の主論点候補（severity4〜5の要約）"],
+  "human_review_notes": ["人間が別途確認すべきポイント"]
 }}
-
-【必ず守るルール】
-1. violations は10〜15件出力する
-2. "text" は下記テキストから15〜35文字を一字一句そのまま引用（改変・要約・省略・補足 禁止）
-3. "text" は問題のある断定表現を含む文節にする。商標名・サービス名だけの引用は禁止
-4. "text" は下記テキスト内に実際に存在する文字列のみ（存在しない文字列は作らない）
-5. 絶対に指摘しないものリストは厳守する
-6. ①を最優先。次に②③④⑤の順で探す
 
 {section_note}
 {text_chunk}"""
@@ -544,7 +561,12 @@ def find_violation_positions(pdf_path: str, violations: list) -> list:
                     "rect": [rect.x0, rect.y0, rect.x1, rect.y1],
                     "number": i + 1,
                     "type": v.get("type", ""),
+                    "statement_type": v.get("statement_type", ""),
+                    "severity": v.get("severity", 3),
+                    "confidence": v.get("confidence", "中"),
+                    "reader_impression": v.get("reader_impression", ""),
                     "explanation": v.get("explanation", ""),
+                    "deletion_comment": v.get("deletion_comment", ""),
                     "text": raw_text,
                 })
                 found = True
@@ -563,7 +585,12 @@ def find_violation_positions(pdf_path: str, violations: list) -> list:
                 "rect": [10.0, fy0, min(pw - 10, 400.0), fy1],
                 "number": i + 1,
                 "type": v.get("type", ""),
+                "statement_type": v.get("statement_type", ""),
+                "severity": v.get("severity", 3),
+                "confidence": v.get("confidence", "中"),
+                "reader_impression": v.get("reader_impression", ""),
                 "explanation": v.get("explanation", ""),
+                "deletion_comment": v.get("deletion_comment", ""),
                 "text": raw_text,
                 "auto_placed": True,
             })
@@ -1080,6 +1107,9 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
             "url": request.url,
             "article_title": analysis.get("article_title", "記事"),
             "trademark": analysis.get("trademark", request.trademark or "商標"),
+            "overall_tone": analysis.get("overall_tone", ""),
+            "primary_claims": analysis.get("primary_claims", []),
+            "human_review_notes": analysis.get("human_review_notes", []),
             "violations": positions,
             "page_count": page_count,
             "page_dims": page_dims,
@@ -1093,6 +1123,9 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
             "session_id": session_id,
             "trademark": sessions[session_id]["trademark"],
             "article_title": sessions[session_id]["article_title"],
+            "overall_tone": sessions[session_id]["overall_tone"],
+            "primary_claims": sessions[session_id]["primary_claims"],
+            "human_review_notes": sessions[session_id]["human_review_notes"],
             "violations": positions,
             "page_count": page_count,
             "page_dims": page_dims,
