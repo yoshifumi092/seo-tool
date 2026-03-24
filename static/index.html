@@ -311,14 +311,15 @@
     .editor-v-item:hover { background: #fff9f9; }
     .editor-v-del {
       position: absolute; top: 8px; right: 8px;
-      width: 22px; height: 22px;
+      width: 24px; height: 24px;
       border: none; border-radius: 50%;
       background: #e74c3c; color: #fff;
-      font-size: 12px; font-weight: bold;
-      cursor: pointer; line-height: 22px; text-align: center;
-      opacity: 0.7; padding: 0;
+      font-size: 13px; font-weight: bold;
+      cursor: pointer; line-height: 24px; text-align: center;
+      opacity: 1; padding: 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
     }
-    .editor-v-del:hover { opacity: 1; }
+    .editor-v-del:hover { background: #c0392b; transform: scale(1.1); }
     .editor-v-meta { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; flex-wrap: wrap; }
     .editor-v-text { font-style: italic; color: #555; margin-bottom: 4px; word-break: break-all; }
     .editor-v-exp { color: #444; line-height: 1.5; }
@@ -353,14 +354,25 @@
       padding: 4px 22px 4px 6px;
       font-size: 10px;
       line-height: 1.35;
-      max-width: 200px;
+      max-width: 400px;
       min-width: 130px;
       cursor: grab;
       user-select: none;
       z-index: 10;
       box-shadow: 1px 1px 4px rgba(0,0,0,0.18);
       pointer-events: auto;
+      overflow: hidden;
     }
+    .ann-resize-handle {
+      position: absolute;
+      bottom: 0; right: 0;
+      width: 12px; height: 12px;
+      cursor: nwse-resize;
+      background: linear-gradient(135deg, transparent 40%, #b00000 40%);
+      border-radius: 0 0 3px 0;
+      opacity: 0.4;
+    }
+    .ann-resize-handle:hover { opacity: 1; }
     .ann-label:active { cursor: grabbing; }
     .ann-label .ann-title {
       font-weight: 700;
@@ -918,6 +930,7 @@ function renderAnnotationLabels(pageIdx) {
           <button class="ann-btn-cancel">キャンセル</button>
         </div>
       </div>
+      <div class="ann-resize-handle" title="ドラッグでサイズ変更"></div>
     `;
 
     // 編集ボタン
@@ -963,6 +976,25 @@ function renderAnnotationLabels(pageIdx) {
 
     // ドラッグ処理
     makeDraggable(div, i, pageIdx);
+
+    // リサイズハンドル処理
+    const resizeHandle = div.querySelector(".ann-resize-handle");
+    resizeHandle.addEventListener("mousedown", (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      const startX = e.clientX, startY = e.clientY;
+      const startW = div.offsetWidth, startH = div.offsetHeight;
+      const onMove = (me) => {
+        div.style.width    = Math.max(100, startW + me.clientX - startX) + "px";
+        div.style.minHeight = Math.max(40,  startH + me.clientY - startY) + "px";
+      };
+      const onUp = () => {
+        document.removeEventListener("mousemove", onMove);
+        document.removeEventListener("mouseup",   onUp);
+      };
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup",   onUp);
+    });
 
     // 追加モード中は非インタラクティブ
     div.style.pointerEvents = editor.drawMode ? "none" : "auto";
@@ -1225,6 +1257,14 @@ function setupCanvasEvents(pageIdx) {
 
 // ── 違反削除 ──
 
+function confirmRemoveViolation(idx) {
+  const v = editor.violations[idx];
+  if (!v) return;
+  if (confirm(`【${v.number}】${v.type}\nこの指摘を削除しますか？`)) {
+    removeViolation(idx);
+  }
+}
+
 async function removeViolation(idx) {
   try {
     const res = await fetch(`/api/session/${editor.sessionId}/violation/${idx}`, {
@@ -1306,7 +1346,7 @@ function renderEditorViolationList() {
     const preview = v.text ? v.text.substring(0, 38) + (v.text.length > 38 ? "…" : "") : "";
 
     item.innerHTML = `
-      <button class="editor-v-del" onclick="removeViolation(${i})" title="削除">✕</button>
+      <button class="editor-v-del" onclick="confirmRemoveViolation(${i})" title="削除">✕</button>
       <div class="editor-v-meta" onclick="jumpToViolation(${i})" style="cursor:pointer;" title="記事の該当箇所へジャンプ">
         <span class="violation-num">【${v.number}】</span>
         <span class="violation-type" id="v-type-label-${i}">${escapeHtml(v.type)}</span>
