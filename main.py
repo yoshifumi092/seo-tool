@@ -410,14 +410,56 @@ def _fix_json_text(text: str) -> str:
     return text
 
 
+def _try_partial_json(text: str) -> dict | None:
+    """途中で切れたJSONから完結した違反オブジェクトだけ抽出して返す。"""
+    result: dict = {"violations": [], "primary_claims": [], "human_review_notes": []}
+    for key in ("article_title", "trademark", "overall_tone"):
+        m = re.search(rf'"{key}"\s*:\s*"((?:[^"\\]|\\.)*)"', text)
+        if m:
+            result[key] = m.group(1)
+
+    va = text.find('"violations"')
+    if va >= 0:
+        arr_start = text.find('[', va)
+        if arr_start >= 0:
+            depth = 0
+            obj_start = -1
+            for i in range(arr_start, len(text)):
+                c = text[i]
+                if c == '{':
+                    if depth == 0:
+                        obj_start = i
+                    depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0 and obj_start >= 0:
+                        obj_str = _fix_json_text(text[obj_start:i + 1])
+                        try:
+                            obj = json.loads(obj_str)
+                            if "text" in obj or "explanation" in obj:
+                                result["violations"].append(obj)
+                        except Exception:
+                            pass
+                        obj_start = -1
+
+    if result.get("article_title") or result["violations"]:
+        return result
+    return None
+
+
 def _parse_ai_response(response_text: str) -> dict:
     import sys as _sys
     text = response_text.strip()
 
-    # コードブロック内のJSONを確実に抽出
+    # 閉じる``` がある場合はその中を使う
     code_block = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
     if code_block:
         text = code_block.group(1).strip()
+    else:
+        # レスポンスが途中で切れて閉じる``` がない場合：開き``` の直後から使う
+        open_block = re.search(r'```(?:json)?\s*', text)
+        if open_block:
+            text = text[open_block.end():].strip()
 
     # { から最後の } までを切り出す
     start = text.find("{")
@@ -436,7 +478,13 @@ def _parse_ai_response(response_text: str) -> dict:
         except Exception:
             continue
 
-    # パース失敗時はログを出力して例外を投げる（黙って0件を返さない）
+    # 標準パース失敗 → 途中切れと判断して完結した違反オブジェクトだけ救出
+    partial = _try_partial_json(response_text)
+    if partial and (partial.get("violations") or partial.get("article_title")):
+        import sys as _sys
+        print(f"[Claude] partial parse: {len(partial['violations'])} violations salvaged", flush=True, file=_sys.stderr)
+        return partial
+
     print(f"[Claude] PARSE FAILED. Raw response (first 1000):\n{response_text[:1000]}", flush=True, file=_sys.stderr)
     raise ValueError(f"Claude response could not be parsed as JSON. Response starts with: {response_text[:200]}")
 
