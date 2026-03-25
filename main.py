@@ -1044,81 +1044,6 @@ def add_red_annotations(doc: fitz.Document, positions: list) -> None:
             )
 
 
-async def create_summary_page(positions: list, article_title: str, trademark: str) -> str:
-    rows_html = ""
-    for item in positions:
-        preview = item["text"][:55] + ("…" if len(item["text"]) > 55 else "")
-        rows_html += f"""
-        <tr>
-          <td class="num">【{item["number"]}】</td>
-          <td class="type">{item["type"]}</td>
-          <td class="excerpt">「{preview}」</td>
-          <td class="reason">{item["explanation"]}</td>
-        </tr>"""
-
-    html = f"""<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <style>
-    * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-    body {{
-      font-family: "Hiragino Kaku Gothic Pro", "Yu Gothic", "Meiryo", "Noto Sans JP", "MS Gothic", sans-serif;
-      font-size: 10.5px; padding: 30px 35px; color: #1a1a1a; line-height: 1.55;
-    }}
-    h1 {{ font-size: 17px; color: #b00000; border-bottom: 3px solid #b00000; padding-bottom: 8px; margin-bottom: 14px; }}
-    .meta {{ background: #fff5f5; border-left: 4px solid #b00000; padding: 10px 14px; margin-bottom: 14px; }}
-    .meta p {{ margin: 3px 0; font-size: 11.5px; }}
-    .meta strong {{ color: #b00000; }}
-    table {{ width: 100%; border-collapse: collapse; font-size: 10px; }}
-    th {{ background: #b00000; color: #fff; padding: 7px 5px; text-align: left; font-size: 10.5px; }}
-    td {{ border: 1px solid #ddd; padding: 6px 5px; vertical-align: top; }}
-    tr:nth-child(even) {{ background: #fff8f8; }}
-    .num  {{ font-weight: bold; color: #b00000; font-size: 12px; text-align: center; white-space: nowrap; }}
-    .type {{ font-weight: bold; color: #b00000; white-space: nowrap; min-width: 110px; }}
-    .excerpt {{ font-style: italic; color: #444; min-width: 160px; }}
-    .reason {{ min-width: 200px; }}
-    .footer {{ margin-top: 18px; font-size: 9px; color: #777; border-top: 1px solid #ddd; padding-top: 8px; }}
-  </style>
-</head>
-<body>
-  <h1>📋 削除申請 指摘事項一覧表</h1>
-  <div class="meta">
-    <p><strong>記事タイトル：</strong>{article_title}</p>
-    <p><strong>侵害・攻撃対象の商標・ブランド：</strong>{trademark}</p>
-    <p><strong>指摘件数：</strong>{len(positions)} 件</p>
-  </div>
-  <table>
-    <thead>
-      <tr>
-        <th style="width:55px">No.</th>
-        <th style="width:115px">違反カテゴリ</th>
-        <th style="width:185px">問題箇所（抜粋）</th>
-        <th>指摘内容・削除理由</th>
-      </tr>
-    </thead>
-    <tbody>{rows_html}</tbody>
-  </table>
-  <div class="footer">
-    本書類は、上記URLに掲載された記事のホスティングサービスへの削除申請のために作成されました。
-    赤枠で囲まれた箇所および上記一覧に記載の問題箇所は、名誉毀損・営業妨害・不正競合その他の
-    法令または利用規約に違反する疑いがあるため、速やかな削除を要請いたします。
-  </div>
-</body>
-</html>"""
-
-    summary_path = f"/tmp/{uuid.uuid4()}_summary.pdf"
-    browser = await _get_browser()
-    context = await browser.new_context()
-    try:
-        pg = await context.new_page()
-        await pg.set_content(html, wait_until="domcontentloaded")
-        await pg.pdf(path=summary_path, format="A4", print_background=True)
-    finally:
-        await context.close()
-
-    return summary_path
-
 
 # ─────────────────────────────────────────────
 # モデル
@@ -1427,7 +1352,6 @@ async def generate(request: GenerateRequest):
 
     try:
         violations = session["violations"]
-        trademark = request.trademark or session.get("trademark", "商標")
         article_title = session.get("article_title", "記事")
 
         final_doc = build_annotated_pdf(pdf_path, violations)
@@ -1437,14 +1361,19 @@ async def generate(request: GenerateRequest):
         final_doc.close()
 
         session["output_path"] = final_path
+        _save_session(request.session_id, session)
 
         with open(final_path, "rb") as f:
             pdf_bytes = f.read()
 
+        # ファイル名に記事タイトルを使用（安全な文字のみ）
+        safe_title = clean_filename(article_title)
+        filename = f"removal-{safe_title}.pdf"
+
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={"Content-Disposition": "attachment; filename=\"removal-report.pdf\""},
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
         )
 
     except HTTPException:
