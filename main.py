@@ -344,94 +344,42 @@ def _parse_ai_response(response_text: str) -> dict:
     return {"article_title": "記事", "trademark": "", "violations": []}
 
 
-async def _call_gemini_once(
+async def _call_claude_once(
     text_chunk: str,
     url: str,
     trademark_hint: str,
     section_label: str = "",
 ) -> dict:
-    import urllib.request
-    import json as _json
+    import anthropic
+    import sys as _sys
 
-    api_key = os.environ["GEMINI_API_KEY"]
-    endpoint = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash:generateContent?key={api_key}"
-    )
+    api_key = os.environ["ANTHROPIC_API_KEY"]
     prompt = _build_analysis_prompt(text_chunk, url, trademark_hint, section_label)
-    payload = _json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "maxOutputTokens": 16000,
-            "temperature": 0.2,
-            "thinkingConfig": {"thinkingBudget": 12000},
-        },
-    }).encode()
 
     def _call():
-        req = urllib.request.Request(
-            endpoint,
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=16000,
+            temperature=0.2,
+            messages=[{"role": "user", "content": prompt}],
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            return _json.loads(resp.read())
+        return message.content[0].text
 
     try:
-        result = await asyncio.to_thread(_call)
+        text = await asyncio.to_thread(_call)
     except Exception as e:
         err = str(e)
-        import sys
-        body = ""
-        if hasattr(e, "read"):
-            try:
-                body = e.read().decode()[:300]
-            except Exception:
-                pass
-        print(f"[Gemini Error] {err} | body={body}", flush=True, file=sys.stderr)
-        if "429" in err:
-            raise HTTPException(429, f"Gemini APIレート制限: {body or err[:200]}")
-        if "400" in err or "API_KEY_INVALID" in err:
-            raise HTTPException(400, f"Gemini APIキーエラー: {body or err[:200]}")
-        raise HTTPException(500, f"Gemini APIエラー: {err[:200]}")
-    # Gemini 2.5系レスポンス解析: 複数のpartから有効なJSONを探す
-    import sys as _sys
-    parts = result["candidates"][0]["content"]["parts"]
-    print(f"[Gemini] parts count={len(parts)}, keys={[list(p.keys()) for p in parts]}", flush=True, file=_sys.stderr)
+        print(f"[Claude Error] {err}", flush=True, file=_sys.stderr)
+        if "rate_limit" in err.lower() or "429" in err:
+            raise HTTPException(429, f"Claude APIレート制限: {err[:200]}")
+        if "authentication" in err.lower() or "401" in err:
+            raise HTTPException(400, f"Claude APIキーエラー: {err[:200]}")
+        raise HTTPException(500, f"Claude APIエラー: {err[:200]}")
 
-    text = ""
-    # 優先1: thought=Trueでなく "violations" を含むpart
-    for part in parts:
-        if part.get("thought"):
-            continue
-        t = part.get("text", "")
-        if '"violations"' in t:
-            text = t
-            break
-    # 優先2: thought=Trueでない最初のpart
-    if not text:
-        for part in parts:
-            if part.get("thought"):
-                continue
-            t = part.get("text", "")
-            if t:
-                text = t
-                break
-    # 優先3: "violations" を含む任意のpart
-    if not text:
-        for part in parts:
-            t = part.get("text", "")
-            if '"violations"' in t:
-                text = t
-                break
-    # 最終: 最後のpart
-    if not text and parts:
-        text = parts[-1].get("text", "")
-
-    print(f"[Gemini] selected text (first 500): {text[:500]}", flush=True, file=_sys.stderr)
+    print(f"[Claude] response (first 500): {text[:500]}", flush=True, file=_sys.stderr)
     parsed = _parse_ai_response(text)
-    print(f"[Gemini] parsed: violations={len(parsed.get('violations', []))}, title={parsed.get('article_title','')[:30]}", flush=True, file=_sys.stderr)
+    print(f"[Claude] parsed: violations={len(parsed.get('violations', []))}, title={parsed.get('article_title','')[:30]}", flush=True, file=_sys.stderr)
     return parsed
 
 
@@ -441,23 +389,30 @@ async def _analyze_once(
     trademark_hint: str,
     section_label: str = "",
 ) -> dict:
-    """Geminiで1チャンクを解析する（429の場合は65秒待って1回リトライ）。"""
-    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    """Claudeで1チャンクを解析する（429は自動リトライ）。"""
+    import sys as _sys
 
-    if not gemini_key:
-        raise HTTPException(500, "GEMINI_API_KEY を Railway の環境変数に設定してください。")
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(500, "ANTHROPIC_API_KEY を Railway の環境変数に設定してください。")
 
-    try:
-        return await _call_gemini_once(text_chunk, url, trademark_hint, section_label)
-    except HTTPException as e:
-        if e.status_code == 400:
-            raise HTTPException(400, "Gemini APIキーが無効です。RailwayのGEMINI_API_KEYを確認してください。")
-        raise
+    for attempt in range(3):
+        try:
+            return await _call_claude_once(text_chunk, url, trademark_hint, section_label)
+        except HTTPException as e:
+            if e.status_code == 400:
+                raise
+            if e.status_code == 429:
+                wait = 30
+                print(f"[Claude] 429 rate limit, waiting {wait}s (attempt {attempt+1})", flush=True, file=_sys.stderr)
+                await asyncio.sleep(wait)
+                continue
+            raise
+    raise HTTPException(500, "Claude APIが繰り返しエラーになりました。しばらく待ってから再試行してください。")
 
 
 async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
-    if not os.environ.get("GEMINI_API_KEY"):
-        raise HTTPException(500, "GEMINI_API_KEY が設定されていません。")
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        raise HTTPException(500, "ANTHROPIC_API_KEY が設定されていません。")
 
     trademark_hint = (
         f"なお、ユーザーより対象商標として「{trademark}」が指定されています。"
@@ -483,13 +438,12 @@ async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
 
 
 async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
-    """選択エリアのテキストをGeminiで解析して違反カテゴリと理由を返す。"""
-    api_key = os.environ.get("GEMINI_API_KEY", "")
+    """選択エリアのテキストをClaudeで解析して違反カテゴリと理由を返す。"""
+    import anthropic
+
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "")
     if not api_key:
         return {"type": "手動追加", "explanation": "ユーザーにより手動で追加された指摘箇所"}
-
-    import urllib.request
-    import json as _json
 
     trademark_hint = f"対象商標：{trademark}" if trademark else ""
     prompt = f"""以下のテキストはネガティブ記事の一部です。{trademark_hint}
@@ -503,43 +457,23 @@ async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
 
 テキスト：「{text[:500]}」
 
-以下のJSON形式のみで回答してください：
+以下のJSON形式のみで回答してください（前置き不要）：
 {{
   "type": "違反カテゴリ（名誉毀損/信用毀損・業務妨害/印象操作/虚偽・根拠なし/過大なネガティブ表現/営業妨害/寄生マーケティング/不正競合 のいずれか）",
   "explanation": "この記述が問題である具体的な理由（2〜3文。根拠の弱さ・断定の強さ・読者への印象を指摘し、削除申請に直接転用できる表現で記載してください）"
 }}"""
 
-    endpoint = (
-        "https://generativelanguage.googleapis.com/v1beta/models/"
-        f"gemini-2.5-flash:generateContent?key={api_key}"
-    )
-    payload = _json.dumps({
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"maxOutputTokens": 512},
-    }).encode()
-
     def _call():
-        req = urllib.request.Request(
-            endpoint, data=payload,
-            headers={"Content-Type": "application/json"}, method="POST",
+        client = anthropic.Anthropic(api_key=api_key)
+        message = client.messages.create(
+            model="claude-haiku-4-5-20251001",  # 手動追加は軽量モデルで高速処理
+            max_tokens=512,
+            messages=[{"role": "user", "content": prompt}],
         )
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return _json.loads(resp.read())
+        return message.content[0].text
 
     try:
-        result = await asyncio.to_thread(_call)
-        # Gemini 2.5思考モデル対応: thought=TrueのpartをスキップしてJSONを含むpartを探す
-        parts = result["candidates"][0]["content"]["parts"]
-        response_text = ""
-        for part in parts:
-            if part.get("thought"):
-                continue
-            t = part.get("text", "")
-            if t:
-                response_text = t
-                break
-        if not response_text and parts:
-            response_text = parts[-1].get("text", "")
+        response_text = await asyncio.to_thread(_call)
         parsers = [
             lambda t: json.loads(t),
             lambda t: json.loads(re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", t).group(1)),

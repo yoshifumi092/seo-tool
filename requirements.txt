@@ -4,3 +4,4 @@ playwright
 pymupdf
 python-multipart
 aiofiles
+anthropic
