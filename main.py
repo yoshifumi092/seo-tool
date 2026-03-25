@@ -863,9 +863,15 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
             )
 
     # ── 注釈ボックスのサイズ・位置 ──
-    box_w, chars = 200.0, 22
-    exp_lines = max(2, (len(explanation) + chars - 1) // chars)
-    box_h = float(min(max(14 + exp_lines * 12 + 10, 52), 140))
+    ann_size = item.get("annotation_size")
+    if ann_size and len(ann_size) == 2:
+        box_w = float(ann_size[0])
+        box_h = float(ann_size[1])
+    else:
+        box_w = 200.0
+        exp_lines = max(2, (len(explanation) + 21) // 22)
+        box_h = float(min(max(14 + exp_lines * 12 + 10, 52), 140))
+    chars = max(10, int(box_w / 9))
 
     ann_pos = item.get("annotation_pos")
     if ann_pos and len(ann_pos) == 2:
@@ -1144,6 +1150,7 @@ class UpdateViolationRequest(BaseModel):
     type: str = ""
     explanation: str = ""
     annotation_pos: list = []
+    annotation_size: list = []  # [width, height] PDF座標
     rect: list = []  # [x0, y0, x1, y1] PDF座標
 
 
@@ -1397,6 +1404,8 @@ async def update_violation(session_id: str, idx: int, request: UpdateViolationRe
         violations[idx]["explanation"] = request.explanation
     if request.annotation_pos and len(request.annotation_pos) == 2:
         violations[idx]["annotation_pos"] = request.annotation_pos
+    if request.annotation_size and len(request.annotation_size) == 2:
+        violations[idx]["annotation_size"] = request.annotation_size
     if request.rect and len(request.rect) == 4:
         violations[idx]["rect"] = request.rect
     _save_session(session_id, session)

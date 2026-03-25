@@ -1160,6 +1160,10 @@ function renderAnnotationLabels(pageIdx) {
     div.dataset.pageIdx = pageIdx;
     div.style.left = bx + "px";
     div.style.top = by + "px";
+    if (v.annotation_size && v.annotation_size.length === 2) {
+      div.style.width    = (v.annotation_size[0] * scaleX) + "px";
+      div.style.minHeight = (v.annotation_size[1] * scaleY) + "px";
+    }
     div.innerHTML = `
       <button class="ann-edit-btn" title="編集">✎</button>
       <div class="ann-title ann-title-display">【${v.number}】${escapeHtml(v.type)}</div>
@@ -1230,9 +1234,22 @@ function renderAnnotationLabels(pageIdx) {
         div.style.width    = Math.max(100, startW + me.clientX - startX) + "px";
         div.style.minHeight = Math.max(40,  startH + me.clientY - startY) + "px";
       };
-      const onUp = () => {
+      const onUp = async () => {
         document.removeEventListener("mousemove", onMove);
         document.removeEventListener("mouseup",   onUp);
+        // PDF座標に変換してサイズを保存
+        const pi = editor.pages[pageIdx];
+        if (!pi) return;
+        const pdfW = div.offsetWidth  * pi.pdfW / pi.imgEl.clientWidth;
+        const pdfH = div.offsetHeight * pi.pdfH / pi.imgEl.clientHeight;
+        editor.violations[i].annotation_size = [pdfW, pdfH];
+        try {
+          await fetch(`/api/session/${editor.sessionId}/violation/${i}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ annotation_size: [pdfW, pdfH] }),
+          });
+        } catch (_) {}
       };
       document.addEventListener("mousemove", onMove);
       document.addEventListener("mouseup",   onUp);
