@@ -323,12 +323,12 @@ def _build_analysis_prompt(
 
 
 def _parse_ai_response(response_text: str) -> dict:
-    # コードブロックマーカーを先に除去してからパース
     text = response_text.strip()
-    if text.startswith("```"):
-        text = re.sub(r'^```(?:json)?\s*', '', text)
-        text = re.sub(r'\s*```\s*$', '', text)
-        text = text.strip()
+
+    # コードブロック内のJSONを確実に抽出
+    code_block = re.search(r'```(?:json)?\s*([\s\S]*?)\s*```', text)
+    if code_block:
+        text = code_block.group(1).strip()
 
     parsers = [
         lambda t: json.loads(t),
