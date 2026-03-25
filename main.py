@@ -1176,8 +1176,18 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
             raise HTTPException(400, "ページの読み込みがタイムアウトしました。時間をおいて再試行してください。")
 
         if isinstance(text_or_err, BaseException):
-            await pdf_task  # PDF taskのエラーも伝播させる
-            raise text_or_err
+            # pdf_taskは既に失敗済み。awaitしてcleanupを確実に完了させる
+            try:
+                await pdf_task
+            except Exception:
+                pass
+            # エラー種別に応じて適切なHTTPExceptionに変換する
+            if isinstance(text_or_err, HTTPException):
+                raise text_or_err
+            err = str(text_or_err)
+            if "net::" in err or "ERR_" in err:
+                raise HTTPException(400, f"URLにアクセスできませんでした。（{err}）")
+            raise HTTPException(400, f"ページの読み込みに失敗しました: {err}")
 
         text = text_or_err
         if len(text.strip()) < 80:
@@ -1348,6 +1358,8 @@ async def add_area(session_id: str, request: AddAreaRequest):
         raise HTTPException(404, "セッションが見つかりません。")
 
     pdf_path = session["pdf_path"]
+    if not os.path.exists(pdf_path):
+        raise HTTPException(404, "元PDFが存在しません。再度「解析する」を押してください。")
     doc = fitz.open(pdf_path)
     try:
         if request.page_num < 0 or request.page_num >= len(doc):
