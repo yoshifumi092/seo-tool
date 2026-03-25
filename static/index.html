@@ -1722,7 +1722,9 @@ async function downloadPDF() {
     const blob = await res.blob();
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = "removal-report.pdf";
+    const rawTitle = lastAnalyzeData?.article_title || editor.trademark || "report";
+    const safeTitle = rawTitle.replace(/[\\/:*?"<>|\x00-\x1f]/g, "").trim().substring(0, 50) || "document";
+    a.download = `removal-${safeTitle}.pdf`;
     a.click();
     URL.revokeObjectURL(a.href);
 

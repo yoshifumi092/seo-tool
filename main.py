@@ -161,24 +161,32 @@ async def _schedule_cleanup(session_id: str, delay: int) -> None:
 # ─────────────────────────────────────────────
 
 async def url_to_pdf(url: str, output_path: str, text_queue: asyncio.Queue = None) -> None:
+    global _browser_instance
     browser = await _get_browser()
-    context = await browser.new_context(
-        user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/124.0.0.0 Safari/537.36"
-        ),
-        viewport={"width": 1920, "height": 1080},
-        locale="ja-JP",
-        timezone_id="Asia/Tokyo",
-        extra_http_headers={
-            "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-            "sec-ch-ua-mobile": "?0",
-            "sec-ch-ua-platform": '"Windows"',
-        },
-    )
+    try:
+        context = await browser.new_context(
+            user_agent=(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/124.0.0.0 Safari/537.36"
+            ),
+            viewport={"width": 1920, "height": 1080},
+            locale="ja-JP",
+            timezone_id="Asia/Tokyo",
+            extra_http_headers={
+                "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+                "sec-ch-ua-mobile": "?0",
+                "sec-ch-ua-platform": '"Windows"',
+            },
+        )
+    except Exception as e:
+        # ブラウザが劣化している場合は破棄して次回リクエストで再起動させる
+        import sys as _sys
+        print(f"[Playwright] new_context failed, resetting browser: {e}", flush=True, file=_sys.stderr)
+        _browser_instance = None
+        raise
 
     try:
         # navigator.webdriver を隠すスクリプトを注入
@@ -561,9 +569,9 @@ async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
     try:
         response_text = await asyncio.to_thread(_call)
         parsers = [
-            lambda t: json.loads(t),
-            lambda t: json.loads(re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", t).group(1)),
-            lambda t: json.loads(t[t.find("{") : t.rfind("}") + 1]),
+            lambda t: json.loads(_fix_json_text(t)),
+            lambda t: json.loads(_fix_json_text(re.search(r"```(?:json)?\s*(\{[\s\S]*?\})\s*```", t).group(1))),
+            lambda t: json.loads(_fix_json_text(t[t.find("{") : t.rfind("}") + 1])),
         ]
         for parser in parsers:
             try:
@@ -1199,9 +1207,8 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
             "created_at": time.time(),
         }
         sessions[session_id] = session_data
-        _save_session(session_id, session_data)
-
         sort_and_renumber(positions)
+        _save_session(session_id, session_data)
         background_tasks.add_task(_schedule_cleanup, session_id, SESSION_TTL)
 
         return {
@@ -1219,6 +1226,11 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
     except HTTPException:
         if claude_task and not claude_task.done():
             claude_task.cancel()
+        if os.path.exists(pdf_path):
+            try:
+                os.remove(pdf_path)
+            except OSError:
+                pass
         raise
     except Exception as e:
         if claude_task and not claude_task.done():
