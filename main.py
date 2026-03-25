@@ -330,6 +330,7 @@ def _build_analysis_prompt(
 
 
 def _parse_ai_response(response_text: str) -> dict:
+    import sys as _sys
     text = response_text.strip()
 
     # コードブロック内のJSONを確実に抽出
@@ -348,7 +349,10 @@ def _parse_ai_response(response_text: str) -> dict:
                 return result
         except Exception:
             continue
-    return {"article_title": "記事", "trademark": "", "violations": []}
+
+    # パース失敗時はログを出力して例外を投げる（黙って0件を返さない）
+    print(f"[Claude] PARSE FAILED. Raw response (first 1000):\n{response_text[:1000]}", flush=True, file=_sys.stderr)
+    raise ValueError(f"Claude response could not be parsed as JSON. Response starts with: {response_text[:200]}")
 
 
 async def _call_claude_once(
@@ -385,7 +389,10 @@ async def _call_claude_once(
         raise HTTPException(500, f"Claude APIエラー: {err[:200]}")
 
     print(f"[Claude] response (first 500): {text[:500]}", flush=True, file=_sys.stderr)
-    parsed = _parse_ai_response(text)
+    try:
+        parsed = _parse_ai_response(text)
+    except ValueError as e:
+        raise HTTPException(500, f"AIレスポンスの解析に失敗しました（JSON形式エラー）: {str(e)[:200]}")
     print(f"[Claude] parsed: violations={len(parsed.get('violations', []))}, title={parsed.get('article_title','')[:30]}", flush=True, file=_sys.stderr)
     return parsed
 
@@ -413,8 +420,13 @@ async def _analyze_once(
                 print(f"[Claude] 429 rate limit, waiting {wait}s (attempt {attempt+1})", flush=True, file=_sys.stderr)
                 await asyncio.sleep(wait)
                 continue
+            if e.status_code == 500 and "JSON形式エラー" in e.detail:
+                # パース失敗はすぐリトライ（最大3回）
+                print(f"[Claude] JSON parse error, retrying (attempt {attempt+1})", flush=True, file=_sys.stderr)
+                await asyncio.sleep(2)
+                continue
             raise
-    raise HTTPException(500, "Claude APIが繰り返しエラーになりました。しばらく待ってから再試行してください。")
+    raise HTTPException(500, "解析に3回失敗しました。記事テキストの取得に問題がある可能性があります。URLを確認して再試行してください。")
 
 
 async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
@@ -434,8 +446,9 @@ async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
 
     result = await _analyze_once(text[:20000], url, trademark_hint)
 
-    # キャッシュに保存
-    _analysis_cache[cache_key] = {"result": result, "ts": time.time()}
+    # 結果が正常な場合のみキャッシュに保存（0件・タイトルが"記事"は失敗扱いでキャッシュしない）
+    if result.get("article_title", "記事") != "記事" or result.get("violations"):
+        _analysis_cache[cache_key] = {"result": result, "ts": time.time()}
     # 古いキャッシュを掃除（最大50件）
     if len(_analysis_cache) > 50:
         oldest = min(_analysis_cache, key=lambda k: _analysis_cache[k]["ts"])
