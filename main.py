@@ -13,7 +13,7 @@ from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
-from playwright.async_api import async_playwright
+from playwright.async_api import async_playwright, Browser, Playwright
 from pydantic import BaseModel
 
 app = FastAPI(title="SEO削除申請ツール")
@@ -33,6 +33,35 @@ SESSION_TTL = 3600
 # URL解析結果キャッシュ（同じURLを再解析してAPIレート制限を回避）
 _analysis_cache: dict = {}  # key: (url, trademark) → {"result": dict, "ts": float}
 CACHE_TTL = 300  # 5分（同一URLの連続リクエスト対策。本番で安定したら延長可）
+
+# Playwright ブラウザの使い回し（毎回起動しないことで4〜5秒短縮）
+_pw_instance: Playwright | None = None
+_browser_instance: Browser | None = None
+_browser_lock = asyncio.Lock()
+
+
+async def _get_browser() -> Browser:
+    """グローバルブラウザインスタンスを返す（存在しない/切断済みなら再起動）。"""
+    global _pw_instance, _browser_instance
+    async with _browser_lock:
+        if _browser_instance is None or not _browser_instance.is_connected():
+            import sys as _sys
+            print("[Playwright] launching new browser instance", flush=True, file=_sys.stderr)
+            if _pw_instance is None:
+                _pw_instance = await async_playwright().start()
+            _browser_instance = await _pw_instance.chromium.launch(
+                args=[
+                    "--no-sandbox",
+                    "--disable-setuid-sandbox",
+                    "--disable-blink-features=AutomationControlled",
+                    "--disable-dev-shm-usage",
+                    "--disable-accelerated-2d-canvas",
+                    "--no-first-run",
+                    "--no-zygote",
+                    "--disable-gpu",
+                ]
+            )
+        return _browser_instance
 
 
 
@@ -86,37 +115,26 @@ async def _schedule_cleanup(session_id: str, delay: int) -> None:
 # ─────────────────────────────────────────────
 
 async def url_to_pdf(url: str, output_path: str, text_queue: asyncio.Queue = None) -> None:
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(
-            args=[
-                "--no-sandbox",
-                "--disable-setuid-sandbox",
-                "--disable-blink-features=AutomationControlled",
-                "--disable-dev-shm-usage",
-                "--disable-accelerated-2d-canvas",
-                "--no-first-run",
-                "--no-zygote",
-                "--disable-gpu",
-            ]
-        )
-        context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1920, "height": 1080},
-            locale="ja-JP",
-            timezone_id="Asia/Tokyo",
-            extra_http_headers={
-                "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-                "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
-                "sec-ch-ua-mobile": "?0",
-                "sec-ch-ua-platform": '"Windows"',
-            },
-        )
+    browser = await _get_browser()
+    context = await browser.new_context(
+        user_agent=(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/124.0.0.0 Safari/537.36"
+        ),
+        viewport={"width": 1920, "height": 1080},
+        locale="ja-JP",
+        timezone_id="Asia/Tokyo",
+        extra_http_headers={
+            "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124", "Not-A.Brand";v="99"',
+            "sec-ch-ua-mobile": "?0",
+            "sec-ch-ua-platform": '"Windows"',
+        },
+    )
 
+    try:
         # navigator.webdriver を隠すスクリプトを注入
         await context.add_init_script("""
             Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
@@ -133,14 +151,16 @@ async def url_to_pdf(url: str, output_path: str, text_queue: asyncio.Queue = Non
         except Exception:
             await page.goto(url, wait_until="load", timeout=45000)
 
-        # JS・画像の読み込みを待つ（少し長めに）
-        await page.wait_for_timeout(5000)
+        # ネットワークアイドルを最大2秒待つ（固定5秒から短縮）
+        try:
+            await page.wait_for_load_state("networkidle", timeout=2000)
+        except Exception:
+            pass  # タイムアウトしても続行
 
         # アクセスブロック検出
         page_text = await page.inner_text("body")
         block_keywords = ["アクセスできません", "403", "Access Denied", "Forbidden", "blocked", "Bot detection"]
         if any(kw.lower() in page_text.lower() for kw in block_keywords) and len(page_text.strip()) < 500:
-            await browser.close()
             err = HTTPException(400, "このサイトはBot対策によりアクセスがブロックされました。別のURLをお試しください。")
             if text_queue:
                 await text_queue.put(err)
@@ -156,7 +176,8 @@ async def url_to_pdf(url: str, output_path: str, text_queue: asyncio.Queue = Non
             print_background=True,
             margin={"top": "15px", "bottom": "15px", "left": "15px", "right": "15px"},
         )
-        await browser.close()
+    finally:
+        await context.close()  # ページは閉じるがブラウザは維持
 
 
 # ─────────────────────────────────────────────
