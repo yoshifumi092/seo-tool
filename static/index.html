@@ -1001,8 +1001,10 @@ function loadPageImage(pageIdx) {
       });
     }
 
-    pi.imgEl.onload = () => initCanvas();
-    pi.imgEl.onerror = () => initCanvas();
+    // 30秒でタイムアウト（サーバー無応答時の無限ハング防止）
+    const loadTimeout = setTimeout(() => initCanvas(), 30000);
+    pi.imgEl.onload = () => { clearTimeout(loadTimeout); initCanvas(); };
+    pi.imgEl.onerror = () => { clearTimeout(loadTimeout); initCanvas(); };
     pi.imgEl.src = `/api/preview/${editor.sessionId}/${pageIdx}`;
   });
 }

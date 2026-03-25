@@ -590,8 +590,9 @@ async def analyze_area_with_ai(text: str, trademark: str = "") -> dict:
                     return r
             except Exception:
                 continue
-    except Exception:
-        pass
+    except Exception as e:
+        import sys as _sys
+        print(f"[analyze_area] error: {e}", flush=True, file=_sys.stderr)
 
     return {"type": "手動追加", "explanation": "ユーザーにより手動で追加された指摘箇所"}
 
@@ -1168,6 +1169,10 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
             text_or_err = await asyncio.wait_for(text_queue.get(), timeout=60)
         except asyncio.TimeoutError:
             pdf_task.cancel()
+            try:
+                await pdf_task
+            except (asyncio.CancelledError, Exception):
+                pass
             raise HTTPException(400, "ページの読み込みがタイムアウトしました。時間をおいて再試行してください。")
 
         if isinstance(text_or_err, BaseException):
@@ -1177,6 +1182,10 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
         text = text_or_err
         if len(text.strip()) < 80:
             pdf_task.cancel()
+            try:
+                await pdf_task
+            except (asyncio.CancelledError, Exception):
+                pass
             raise HTTPException(400, "このページはテキストを抽出できませんでした。Cloudflare等のボット対策で保護されている可能性があります。")
 
         # Claude解析をPDF生成と並列スタート
