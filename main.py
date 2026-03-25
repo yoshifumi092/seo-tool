@@ -425,7 +425,7 @@ async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
     if cached and (time.time() - cached["ts"]) < CACHE_TTL:
         return cached["result"]
 
-    result = await _analyze_once(text[:12000], url, trademark_hint)
+    result = await _analyze_once(text[:20000], url, trademark_hint)
 
     # キャッシュに保存
     _analysis_cache[cache_key] = {"result": result, "ts": time.time()}
