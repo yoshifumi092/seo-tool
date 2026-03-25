@@ -487,13 +487,8 @@ async def _analyze_once(
                 print(f"[Claude] 429 rate limit, waiting {wait}s (attempt {attempt+1})", flush=True, file=_sys.stderr)
                 await asyncio.sleep(wait)
                 continue
-            if e.status_code == 500 and "JSON形式エラー" in e.detail:
-                # パース失敗はすぐリトライ（最大3回）
-                print(f"[Claude] JSON parse error, retrying (attempt {attempt+1})", flush=True, file=_sys.stderr)
-                await asyncio.sleep(2)
-                continue
             raise
-    raise HTTPException(500, "解析に3回失敗しました。記事テキストの取得に問題がある可能性があります。URLを確認して再試行してください。")
+    raise HTTPException(500, "Claude APIが繰り返しエラーになりました。しばらく待ってから再試行してください。")
 
 
 async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:

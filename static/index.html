@@ -822,7 +822,10 @@ function setStep1Enabled(enabled) {
 
 // ── STEP 1 ──
 
+let _isAnalyzing = false;
+
 async function startAnalyze() {
+  if (_isAnalyzing) return; // 解析中の重複リクエストを防止
   const url = document.getElementById("url-input").value.trim();
   const trademark = document.getElementById("trademark-input").value.trim();
 
@@ -832,6 +835,7 @@ async function startAnalyze() {
     return;
   }
 
+  _isAnalyzing = true;
   document.getElementById("error-box").style.display = "none";
   document.getElementById("results").style.display = "none";
   document.getElementById("card-step3").style.display = "none";
@@ -865,6 +869,7 @@ async function startAnalyze() {
     stopProgressAnimation();
     showError(e.message || "不明なエラーが発生しました。");
   } finally {
+    _isAnalyzing = false;
     setLoading(false);
     setStep1Enabled(true);
   }
