@@ -1473,10 +1473,12 @@ async def generate(request: GenerateRequest):
         safe_title = clean_filename(article_title)
         filename = f"removal-{safe_title}.pdf"
 
+        from urllib.parse import quote
+        filename_encoded = quote(filename, safe="-_.~")
         return Response(
             content=pdf_bytes,
             media_type="application/pdf",
-            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+            headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename_encoded}"},
         )
 
     except HTTPException:
