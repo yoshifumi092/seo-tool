@@ -396,6 +396,13 @@ def _build_analysis_prompt(
 {text_chunk}"""
 
 
+def _fix_json_text(text: str) -> str:
+    """LLMが生成しがちなJSON文法エラーを修正する。"""
+    # トレーリングカンマ（}, または ,] の直前のカンマ）を除去
+    text = re.sub(r',(\s*[}\]])', r'\1', text)
+    return text
+
+
 def _parse_ai_response(response_text: str) -> dict:
     import sys as _sys
     text = response_text.strip()
@@ -405,13 +412,22 @@ def _parse_ai_response(response_text: str) -> dict:
     if code_block:
         text = code_block.group(1).strip()
 
+    # { から最後の } までを切り出す
+    start = text.find("{")
+    end = text.rfind("}")
+    if start != -1 and end != -1:
+        text = text[start:end + 1]
+
+    # JSON修正を適用してからパース試行
+    cleaned = _fix_json_text(text)
+
     parsers = [
         lambda t: json.loads(t),
-        lambda t: json.loads(t[t.find("{") : t.rfind("}") + 1]),
+        lambda t: json.loads(_fix_json_text(t)),
     ]
-    for parser in parsers:
+    for t in [cleaned, text]:
         try:
-            result = parser(text)
+            result = json.loads(t)
             if "violations" in result:
                 return result
         except Exception:
