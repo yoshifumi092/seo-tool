@@ -798,10 +798,20 @@ function startProgressAnimation() {
   _progressTimers = phases.map(({ at, pct, msg, step }) =>
     setTimeout(() => setProgress(pct, msg, step), at)
   );
+  // 88%以降も止まって見えないよう、2秒ごとに少しずつ進める（最大93%）
+  let slowPct = 88;
+  const slowTimer = setInterval(() => {
+    if (slowPct < 93) {
+      slowPct += 0.5;
+      document.getElementById("progress-bar").style.width = slowPct + "%";
+      document.getElementById("progress-pct").textContent = Math.floor(slowPct) + "%";
+    }
+  }, 2000);
+  _progressTimers.push(slowTimer);
 }
 
 function stopProgressAnimation() {
-  _progressTimers.forEach(t => clearTimeout(t));
+  _progressTimers.forEach(t => { clearTimeout(t); clearInterval(t); });
   _progressTimers = [];
 }
 
