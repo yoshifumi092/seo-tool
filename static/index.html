@@ -317,6 +317,20 @@
       color: #c0392b; font-size: 13px;
       display: none; margin-bottom: 16px;
     }
+    .error-solution {
+      margin-top: 8px; font-size: 12px;
+      color: #555; background: #fff8f8;
+      border-left: 3px solid #e74c3c;
+      padding: 6px 10px; border-radius: 0 4px 4px 0;
+    }
+    .error-action-btn {
+      margin-top: 10px;
+      background: #c0392b; color: #fff;
+      border: none; border-radius: 6px;
+      padding: 7px 16px; font-size: 13px;
+      cursor: pointer; font-weight: 600;
+    }
+    .error-action-btn:hover { background: #a93226; }
     #success-banner {
       display: none;
       background: #eafaf1; border: 1px solid #a9dfbf;
@@ -705,9 +719,58 @@ function escapeHtml(str) {
 
 function showError(msg) {
   const box = document.getElementById("error-box");
-  box.textContent = "⚠️ " + msg;
+
+  // エラータイプ別に解決策とアクションを決定
+  let solution = "";
+  let actionLabel = "";
+  let actionFn = "";
+  const m = msg.toLowerCase();
+
+  if (m.includes("セッション") || m.includes("session") || m.includes("見つかりません") || m.includes("404")) {
+    solution = "サーバーが再起動してセッションが失われました。URLを再入力して解析してください。";
+    actionLabel = "再解析する";
+    actionFn = "resetToStep1()";
+  } else if (m.includes("タイムアウト") || m.includes("timeout") || m.includes("timed out")) {
+    solution = "サーバーへの接続がタイムアウトしました。しばらく待ってから再試行してください。";
+    actionLabel = "再試行";
+    actionFn = "startAnalyze()";
+  } else if (m.includes("bot") || m.includes("ブロック") || m.includes("cloudflare") || m.includes("アクセスできません")) {
+    solution = "このサイトはBot対策で保護されています。別のURLをお試しください。";
+  } else if (m.includes("anthropic") || m.includes("apiキー") || m.includes("api key") || m.includes("authentication")) {
+    solution = "RailwayのANTHROPIC_API_KEY設定を確認してください。";
+  } else if (m.includes("429") || m.includes("レート制限") || m.includes("rate")) {
+    solution = "APIの利用制限に達しました。1〜2分待ってから再試行してください。";
+    actionLabel = "再試行";
+    actionFn = "startAnalyze()";
+  } else if (m.includes("テキストを抽出") || m.includes("テキストが")) {
+    solution = "ページのテキストが取得できませんでした。JavaScriptで動的に生成されるサイトや、画像のみのページは対応していません。";
+  } else if (m.includes("url") || m.includes("アクセス")) {
+    solution = "URLが正しいか確認してください。ページが公開されていない、または移転している可能性があります。";
+  }
+
+  box.innerHTML = `
+    <div>⚠️ ${escapeHtml(msg)}</div>
+    ${solution ? `<div class="error-solution">💡 ${escapeHtml(solution)}</div>` : ""}
+    ${actionLabel ? `<button class="error-action-btn" onclick="${actionFn}">${escapeHtml(actionLabel)}</button>` : ""}
+  `;
   box.style.display = "block";
-  setTimeout(() => { box.style.display = "none"; }, 8000);
+  box.scrollIntoView({ behavior: "smooth", block: "nearest" });
+
+  // アクションボタンがない場合のみ自動非表示
+  if (!actionLabel) {
+    setTimeout(() => { box.style.display = "none"; }, 10000);
+  }
+}
+
+function resetToStep1() {
+  document.getElementById("error-box").style.display = "none";
+  document.getElementById("results").style.display = "none";
+  document.getElementById("card-step3").style.display = "none";
+  document.getElementById("success-banner").style.display = "none";
+  currentSessionId = null;
+  lastAnalyzeData = null;
+  window.scrollTo({ top: 0, behavior: "smooth" });
+  setTimeout(() => document.getElementById("url-input").focus(), 400);
 }
 
 let _progressTimers = [];
