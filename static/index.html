@@ -1777,7 +1777,7 @@ function saveHistory(entry) {
   const list = loadHistory();
   list.unshift(entry); // 先頭に追加
   if (list.length > HISTORY_MAX) list.splice(HISTORY_MAX);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+  try { localStorage.setItem(HISTORY_KEY, JSON.stringify(list)); } catch (_) {}
 }
 
 function clearHistory() {

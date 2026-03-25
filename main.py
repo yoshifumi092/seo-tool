@@ -47,6 +47,13 @@ async def _get_browser() -> Browser:
         if _browser_instance is None or not _browser_instance.is_connected():
             import sys as _sys
             print("[Playwright] launching new browser instance", flush=True, file=_sys.stderr)
+            # 古いブラウザインスタンスを確実にクローズしてからリソース解放
+            if _browser_instance is not None:
+                try:
+                    await _browser_instance.close()
+                except Exception:
+                    pass
+                _browser_instance = None
             if _pw_instance is None:
                 _pw_instance = await async_playwright().start()
             _browser_instance = await _pw_instance.chromium.launch(
@@ -523,10 +530,13 @@ async def analyze_with_claude(text: str, url: str, trademark: str = "") -> dict:
     # 結果が正常な場合のみキャッシュに保存（0件・タイトルが"記事"は失敗扱いでキャッシュしない）
     if result.get("article_title", "記事") != "記事" or result.get("violations"):
         _analysis_cache[cache_key] = {"result": result, "ts": time.time()}
-    # 古いキャッシュを掃除（最大50件）
+    # 古いキャッシュを掃除（最大50件）。同時アクセスによるdict変更エラーを防ぐためtry/exceptで保護
     if len(_analysis_cache) > 50:
-        oldest = min(_analysis_cache, key=lambda k: _analysis_cache[k]["ts"])
-        del _analysis_cache[oldest]
+        try:
+            oldest = min(_analysis_cache, key=lambda k: _analysis_cache[k]["ts"])
+            del _analysis_cache[oldest]
+        except (RuntimeError, KeyError):
+            pass
 
     return result
 
@@ -687,24 +697,49 @@ def find_violation_positions(pdf_path: str, violations: list) -> list:
     テキストが見つからない場合でも必ずページ0に配置する。
     """
     doc = fitz.open(pdf_path)
-    page_count = len(doc)
-    page_widths  = [doc[p].rect.width  for p in range(page_count)]
-    page_heights = [doc[p].rect.height for p in range(page_count)]
-    positions = []
-    not_found_count = 0  # 見つからなかった件数（フォールバック位置計算用）
+    try:
+        page_count = len(doc)
+        page_widths  = [doc[p].rect.width  for p in range(page_count)]
+        page_heights = [doc[p].rect.height for p in range(page_count)]
+        positions = []
+        not_found_count = 0  # 見つからなかった件数（フォールバック位置計算用）
 
-    for i, v in enumerate(violations):
-        raw_text = v.get("text", "")
-        normalized = _normalize_search_text(raw_text)
-        found = False
+        for i, v in enumerate(violations):
+            raw_text = v.get("text", "")
+            normalized = _normalize_search_text(raw_text)
+            found = False
 
-        for page_num in range(page_count):
-            page = doc[page_num]
-            rect = _search_text_in_page(page, normalized)
-            if rect:
+            for page_num in range(page_count):
+                page = doc[page_num]
+                rect = _search_text_in_page(page, normalized)
+                if rect:
+                    positions.append({
+                        "page_num": page_num,
+                        "rect": [rect.x0, rect.y0, rect.x1, rect.y1],
+                        "number": i + 1,
+                        "type": v.get("type", ""),
+                        "statement_type": v.get("statement_type", ""),
+                        "severity": v.get("severity", 3),
+                        "confidence": v.get("confidence", "中"),
+                        "reader_impression": v.get("reader_impression", ""),
+                        "explanation": v.get("explanation", ""),
+                        "deletion_comment": v.get("deletion_comment", ""),
+                        "text": raw_text,
+                    })
+                    found = True
+                    break
+
+            if not found:
+                # テキストが見つからない場合：
+                # ページ0の最初のテキストブロック付近に配置（ユーザーがドラッグ移動可能）
+                pw = page_widths[0] if page_widths else 595
+                ph = page_heights[0] if page_heights else 842
+                row = not_found_count % 20
+                fy0 = 30.0 + row * 40
+                fy1 = fy0 + 16
                 positions.append({
-                    "page_num": page_num,
-                    "rect": [rect.x0, rect.y0, rect.x1, rect.y1],
+                    "page_num": 0,
+                    "rect": [10.0, fy0, min(pw - 10, 400.0), fy1],
                     "number": i + 1,
                     "type": v.get("type", ""),
                     "statement_type": v.get("statement_type", ""),
@@ -714,36 +749,13 @@ def find_violation_positions(pdf_path: str, violations: list) -> list:
                     "explanation": v.get("explanation", ""),
                     "deletion_comment": v.get("deletion_comment", ""),
                     "text": raw_text,
+                    "auto_placed": True,
                 })
-                found = True
-                break
+                not_found_count += 1
 
-        if not found:
-            # テキストが見つからない場合：
-            # ページ0の最初のテキストブロック付近に配置（ユーザーがドラッグ移動可能）
-            pw = page_widths[0] if page_widths else 595
-            ph = page_heights[0] if page_heights else 842
-            row = not_found_count % 20
-            fy0 = 30.0 + row * 40
-            fy1 = fy0 + 16
-            positions.append({
-                "page_num": 0,
-                "rect": [10.0, fy0, min(pw - 10, 400.0), fy1],
-                "number": i + 1,
-                "type": v.get("type", ""),
-                "statement_type": v.get("statement_type", ""),
-                "severity": v.get("severity", 3),
-                "confidence": v.get("confidence", "中"),
-                "reader_impression": v.get("reader_impression", ""),
-                "explanation": v.get("explanation", ""),
-                "deletion_comment": v.get("deletion_comment", ""),
-                "text": raw_text,
-                "auto_placed": True,
-            })
-            not_found_count += 1
-
-    doc.close()
-    return positions
+        return positions
+    finally:
+        doc.close()
 
 
 def sort_and_renumber(violations: list) -> None:
@@ -861,29 +873,31 @@ def build_annotated_pdf(pdf_path: str, violations: list) -> fitz.Document:
     """
     font_path = _get_cjk_font_path()
     orig_doc = fitz.open(pdf_path)
-    new_doc = fitz.open()
+    try:
+        new_doc = fitz.open()
 
-    for page_num in range(len(orig_doc)):
-        orig_page = orig_doc[page_num]
-        pw, ph = orig_page.rect.width, orig_page.rect.height
-        new_page = new_doc.new_page(width=pw, height=ph)
+        for page_num in range(len(orig_doc)):
+            orig_page = orig_doc[page_num]
+            pw, ph = orig_page.rect.width, orig_page.rect.height
+            new_page = new_doc.new_page(width=pw, height=ph)
 
-        # ① 赤枠＋注釈テキストを先に描画（これが最前面になる）
-        for item in violations:
-            if item.get("page_num") == page_num and item.get("rect"):
-                _draw_violation_on_page(new_page, item, font_path)
+            # ① 赤枠＋注釈テキストを先に描画（これが最前面になる）
+            for item in violations:
+                if item.get("page_num") == page_num and item.get("rect"):
+                    _draw_violation_on_page(new_page, item, font_path)
 
-        # ② グレースケール画像を背面に挿入（overlay=False = 既存の描画の後ろ）
-        mat = fitz.Matrix(2, 2)
-        pix = orig_page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY)
-        new_page.insert_image(
-            fitz.Rect(0, 0, pw, ph),
-            pixmap=pix,
-            overlay=False,  # ← 背面に挿入。赤枠が隠れない。
-        )
+            # ② グレースケール画像を背面に挿入（overlay=False = 既存の描画の後ろ）
+            mat = fitz.Matrix(2, 2)
+            pix = orig_page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY)
+            new_page.insert_image(
+                fitz.Rect(0, 0, pw, ph),
+                pixmap=pix,
+                overlay=False,  # ← 背面に挿入。赤枠が隠れない。
+            )
 
-    orig_doc.close()
-    return new_doc
+        return new_doc
+    finally:
+        orig_doc.close()
 
 
 def auto_place_annotation(expanded: fitz.Rect, page_rect: fitz.Rect, box_w: float, box_h: float, margin: float = 6) -> tuple:
@@ -1189,9 +1203,11 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
         positions = find_violation_positions(pdf_path, violations_raw)
 
         doc = fitz.open(pdf_path)
-        page_count = len(doc)
-        page_dims = [{"w": p.rect.width, "h": p.rect.height} for p in doc]
-        doc.close()
+        try:
+            page_count = len(doc)
+            page_dims = [{"w": p.rect.width, "h": p.rect.height} for p in doc]
+        finally:
+            doc.close()
 
         session_data = {
             "pdf_path": pdf_path,
@@ -1254,17 +1270,18 @@ async def preview_page(session_id: str, page_num: int):
         raise HTTPException(404, "PDFが見つかりません。")
 
     doc = fitz.open(pdf_path)
-    if page_num < 0 or page_num >= len(doc):
-        doc.close()
-        raise HTTPException(404, "ページが見つかりません。")
+    try:
+        if page_num < 0 or page_num >= len(doc):
+            raise HTTPException(404, "ページが見つかりません。")
 
-    page = doc[page_num]
-    pdf_w = page.rect.width
-    pdf_h = page.rect.height
-    mat = fitz.Matrix(1.5, 1.5)
-    pix = page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY)
-    img_bytes = pix.tobytes("png")
-    doc.close()
+        page = doc[page_num]
+        pdf_w = page.rect.width
+        pdf_h = page.rect.height
+        mat = fitz.Matrix(1.5, 1.5)
+        pix = page.get_pixmap(matrix=mat, colorspace=fitz.csGRAY)
+        img_bytes = pix.tobytes("png")
+    finally:
+        doc.close()
 
     return Response(
         content=img_bytes,
@@ -1323,14 +1340,14 @@ async def add_area(session_id: str, request: AddAreaRequest):
 
     pdf_path = session["pdf_path"]
     doc = fitz.open(pdf_path)
-    if request.page_num < 0 or request.page_num >= len(doc):
+    try:
+        if request.page_num < 0 or request.page_num >= len(doc):
+            raise HTTPException(404, "ページが見つかりません。")
+        page = doc[request.page_num]
+        clip = fitz.Rect(*request.rect)
+        area_text = page.get_text("text", clip=clip).strip() or "（テキストなし）"
+    finally:
         doc.close()
-        raise HTTPException(404, "ページが見つかりません。")
-
-    page = doc[request.page_num]
-    clip = fitz.Rect(*request.rect)
-    area_text = page.get_text("text", clip=clip).strip() or "（テキストなし）"
-    doc.close()
 
     trademark = request.trademark or session.get("trademark", "")
     ai_result = await analyze_area_with_ai(area_text, trademark)
@@ -1367,10 +1384,11 @@ async def generate(request: GenerateRequest):
         article_title = session.get("article_title", "記事")
 
         final_doc = build_annotated_pdf(pdf_path, violations)
-
         final_path = f"/tmp/{request.session_id}_final.pdf"
-        final_doc.save(final_path)
-        final_doc.close()
+        try:
+            final_doc.save(final_path)
+        finally:
+            final_doc.close()
 
         session["output_path"] = final_path
         _save_session(request.session_id, session)
