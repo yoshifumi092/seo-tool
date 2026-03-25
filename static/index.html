@@ -215,15 +215,23 @@
       gap: 14px;
       padding: 40px 0;
     }
-    .spinner {
-      width: 44px; height: 44px;
-      border: 4px solid #f0d0ce;
-      border-top-color: var(--red);
-      border-radius: 50%;
-      animation: spin .8s linear infinite;
+    #loading-msg { font-size: 15px; font-weight: 600; color: var(--text); }
+    #loading-step { font-size: 12px; color: var(--muted); min-height: 18px; }
+    #progress-bar-wrap {
+      width: 100%; max-width: 500px;
+      background: #f0d0ce;
+      border-radius: 100px;
+      height: 10px;
+      overflow: hidden;
     }
-    @keyframes spin { to { transform: rotate(360deg); } }
-    #loading-msg { font-size: 14px; color: var(--muted); }
+    #progress-bar {
+      height: 100%;
+      background: var(--red);
+      border-radius: 100px;
+      width: 0%;
+      transition: width 0.6s ease;
+    }
+    #progress-pct { font-size: 12px; color: var(--red); font-weight: 700; }
 
     #results { display: none; }
 
@@ -608,9 +616,15 @@
 
   <!-- ローディング -->
   <div class="card" id="loading" style="display:none;">
-    <div style="display:flex;flex-direction:column;align-items:center;gap:14px;padding:30px 0;">
-      <div class="spinner"></div>
-      <p id="loading-msg">URLをPDF化しています...</p>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px;padding:32px 24px;width:100%;">
+      <p id="loading-msg">解析しています...</p>
+      <div id="progress-bar-wrap">
+        <div id="progress-bar"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;width:100%;max-width:500px;">
+        <p id="loading-step">しばらくお待ちください</p>
+        <p id="progress-pct">0%</p>
+      </div>
     </div>
   </div>
 
@@ -696,8 +710,44 @@ function showError(msg) {
   setTimeout(() => { box.style.display = "none"; }, 8000);
 }
 
+let _progressTimers = [];
+
+function setProgress(pct, msg, step) {
+  document.getElementById("progress-bar").style.width = pct + "%";
+  document.getElementById("progress-pct").textContent = pct + "%";
+  if (msg)  document.getElementById("loading-msg").textContent = msg;
+  if (step !== undefined) document.getElementById("loading-step").textContent = step;
+}
+
+function startProgressAnimation() {
+  setProgress(0, "解析を開始しています...", "");
+  const phases = [
+    { at:  500,  pct:  8, msg: "ページを取得中...",       step: "記事ページにアクセスしています" },
+    { at: 3000,  pct: 18, msg: "ページを取得中...",       step: "ページの読み込みを待っています" },
+    { at: 8000,  pct: 30, msg: "ページを取得中...",       step: "コンテンツを解析しています" },
+    { at: 13000, pct: 42, msg: "Claudeが解析中...",       step: "AIが記事全体をスキャンしています" },
+    { at: 18000, pct: 55, msg: "Claudeが解析中...",       step: "権利侵害パターンを確認しています" },
+    { at: 23000, pct: 65, msg: "Claudeが解析中...",       step: "指摘内容を整理しています" },
+    { at: 28000, pct: 74, msg: "Claudeが解析中...",       step: "削除申請論点を評価しています" },
+    { at: 33000, pct: 82, msg: "Claudeが解析中...",       step: "最終確認中..." },
+    { at: 40000, pct: 88, msg: "Claudeが解析中...",       step: "もうすぐ完了します" },
+  ];
+  _progressTimers = phases.map(({ at, pct, msg, step }) =>
+    setTimeout(() => setProgress(pct, msg, step), at)
+  );
+}
+
+function stopProgressAnimation() {
+  _progressTimers.forEach(t => clearTimeout(t));
+  _progressTimers = [];
+}
+
 function setLoading(visible, msg = "") {
   document.getElementById("loading").style.display = visible ? "block" : "none";
+  if (!visible) {
+    stopProgressAnimation();
+    setProgress(0, "", "");
+  }
   if (msg) document.getElementById("loading-msg").textContent = msg;
 }
 
@@ -724,11 +774,8 @@ async function startAnalyze() {
   document.getElementById("card-step3").style.display = "none";
   document.getElementById("success-banner").style.display = "none";
   setStep1Enabled(false);
-  setLoading(true, "URLをPDF化しています... (30秒ほどかかります)");
-
-  const msgTimer = setTimeout(() => {
-    document.getElementById("loading-msg").textContent = "AIが記事を解析しています... (さらに30秒ほど)";
-  }, 15000);
+  setLoading(true);
+  startProgressAnimation();
 
   try {
     const res = await fetch("/api/analyze", {
@@ -736,20 +783,23 @@ async function startAnalyze() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ url, trademark }),
     });
-    clearTimeout(msgTimer);
+    stopProgressAnimation();
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       if (res.status === 429) {
-        throw new Error("⚠️ AI APIの無料利用上限に達しています。\n\n【解決方法】\n① 1〜2分待ってから再試行する\n② それでも続く場合は、明日（日次リセット後）に再試行する\n③ Google AI Studio（aistudio.google.com）で新しいAPIキーを取得してRailwayに設定する");
+        throw new Error("⚠️ AI APIの無料利用上限に達しています。\n\n【解決方法】\n① 1〜2分待ってから再試行する\n② それでも続く場合は、明日（日次リセット後）に再試行する");
       }
       throw new Error(err.detail || "解析に失敗しました。");
     }
+    setProgress(95, "結果を処理中...", "PDF上の位置を特定しています");
     const data = await res.json();
+    setProgress(100, "完了！", "");
+    await new Promise(r => setTimeout(r, 400));
     currentSessionId = data.session_id;
     lastAnalyzeData = data;
     renderResults(data);
   } catch (e) {
-    clearTimeout(msgTimer);
+    stopProgressAnimation();
     showError(e.message || "不明なエラーが発生しました。");
   } finally {
     setLoading(false);
