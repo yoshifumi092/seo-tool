@@ -34,6 +34,101 @@
     header .icon { font-size: 28px; }
     header h1 { font-size: 20px; font-weight: 700; }
     header p  { font-size: 12px; color: #aab4c4; margin-top: 2px; }
+    header .header-right { margin-left: auto; }
+    .btn-history {
+      background: rgba(255,255,255,0.12);
+      color: #fff;
+      border: 1px solid rgba(255,255,255,0.25);
+      border-radius: 7px;
+      padding: 7px 14px;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .btn-history:hover { background: rgba(255,255,255,0.22); }
+
+    /* 履歴パネル */
+    #history-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.35);
+      z-index: 200;
+    }
+    #history-overlay.open { display: block; }
+    #history-panel {
+      position: fixed;
+      top: 0; left: 0;
+      width: 340px; height: 100vh;
+      background: #fff;
+      box-shadow: 4px 0 24px rgba(0,0,0,0.18);
+      z-index: 201;
+      display: flex; flex-direction: column;
+      transform: translateX(-100%);
+      transition: transform 0.25s ease;
+    }
+    #history-panel.open { transform: translateX(0); }
+    .history-header {
+      background: var(--navy);
+      color: #fff;
+      padding: 18px 20px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .history-header h2 { font-size: 15px; font-weight: 700; }
+    .history-close {
+      background: none; border: none; color: #fff;
+      font-size: 20px; cursor: pointer; line-height: 1; padding: 0;
+    }
+    .history-toolbar {
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 12px; color: var(--muted);
+    }
+    .history-clear {
+      background: none; border: none;
+      color: #e74c3c; font-size: 12px; cursor: pointer; padding: 0;
+    }
+    .history-clear:hover { text-decoration: underline; }
+    .history-list {
+      flex: 1; overflow-y: auto; padding: 8px 0;
+    }
+    .history-list::-webkit-scrollbar { width: 4px; }
+    .history-list::-webkit-scrollbar-thumb { background: #ddd; border-radius: 2px; }
+    .history-item {
+      padding: 10px 16px;
+      border-bottom: 1px solid #f0f2f5;
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .history-item:hover { background: #f7f9fc; }
+    .history-item-title {
+      font-size: 12px; font-weight: 600; color: var(--text);
+      margin-bottom: 3px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .history-item-url {
+      font-size: 10px; color: var(--muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      margin-bottom: 4px;
+    }
+    .history-item-meta {
+      display: flex; gap: 8px; align-items: center;
+    }
+    .history-item-date { font-size: 10px; color: var(--muted); }
+    .history-item-count {
+      font-size: 10px; color: #fff;
+      background: var(--red); border-radius: 10px;
+      padding: 1px 7px;
+    }
+    .history-item-trademark {
+      font-size: 10px; color: var(--muted);
+      background: #f0f2f5; border-radius: 10px;
+      padding: 1px 7px;
+    }
+    .history-empty {
+      text-align: center; padding: 40px 20px;
+      color: var(--muted); font-size: 13px; line-height: 1.8;
+    }
 
     main {
       max-width: 960px;
@@ -473,7 +568,24 @@
     <h1>SEO削除申請ツール</h1>
     <p>ネガティブ記事の削除申請書類（グレースケール＋赤枠注釈PDF）を自動生成します</p>
   </div>
+  <div class="header-right">
+    <button class="btn-history" onclick="openHistory()">🕐 履歴</button>
+  </div>
 </header>
+
+<!-- 履歴パネル -->
+<div id="history-overlay" onclick="closeHistory()"></div>
+<div id="history-panel">
+  <div class="history-header">
+    <h2>🕐 ダウンロード履歴</h2>
+    <button class="history-close" onclick="closeHistory()">✕</button>
+  </div>
+  <div class="history-toolbar">
+    <span id="history-count-label">直近50件まで保存</span>
+    <button class="history-clear" onclick="clearHistory()">履歴を削除</button>
+  </div>
+  <div class="history-list" id="history-list"></div>
+</div>
 
 <main>
   <div class="error-box" id="error-box"></div>
@@ -1483,6 +1595,15 @@ async function downloadPDF() {
     a.click();
     URL.revokeObjectURL(a.href);
 
+    // 履歴に保存
+    saveHistory({
+      url:       document.getElementById("url-input")?.value || "",
+      title:     lastAnalyzeData?.article_title || editor.trademark || "タイトル不明",
+      trademark: editor.trademark || "",
+      count:     editor.violations?.length || 0,
+      date:      new Date().toLocaleString("ja-JP", { month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit" }),
+    });
+
     document.getElementById("success-banner").style.display = "block";
     document.getElementById("success-banner").scrollIntoView({ behavior: "smooth" });
   } catch (e) {
@@ -1508,6 +1629,80 @@ document.addEventListener("DOMContentLoaded", () => {
     if (e.key === "Enter") startAnalyze();
   });
 });
+
+// ── 履歴管理 ──
+
+const HISTORY_KEY = "seo_tool_history";
+const HISTORY_MAX = 50;
+
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]"); }
+  catch { return []; }
+}
+
+function saveHistory(entry) {
+  const list = loadHistory();
+  list.unshift(entry); // 先頭に追加
+  if (list.length > HISTORY_MAX) list.splice(HISTORY_MAX);
+  localStorage.setItem(HISTORY_KEY, JSON.stringify(list));
+}
+
+function clearHistory() {
+  if (!confirm("履歴をすべて削除しますか？")) return;
+  localStorage.removeItem(HISTORY_KEY);
+  renderHistoryList();
+}
+
+function openHistory() {
+  renderHistoryList();
+  document.getElementById("history-overlay").classList.add("open");
+  document.getElementById("history-panel").classList.add("open");
+}
+
+function closeHistory() {
+  document.getElementById("history-overlay").classList.remove("open");
+  document.getElementById("history-panel").classList.remove("open");
+}
+
+function renderHistoryList() {
+  const list = loadHistory();
+  const el = document.getElementById("history-list");
+  const label = document.getElementById("history-count-label");
+  label.textContent = `${list.length} 件 / 直近${HISTORY_MAX}件まで保存`;
+
+  if (list.length === 0) {
+    el.innerHTML = '<div class="history-empty">まだダウンロード履歴がありません。<br>PDFをダウンロードすると<br>ここに記録されます。</div>';
+    return;
+  }
+
+  el.innerHTML = list.map((item, i) => `
+    <div class="history-item" onclick="loadHistoryItem(${i})">
+      <div class="history-item-title" title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</div>
+      <div class="history-item-url" title="${escapeHtml(item.url)}">${escapeHtml(item.url)}</div>
+      <div class="history-item-meta">
+        <span class="history-item-date">${escapeHtml(item.date)}</span>
+        ${item.count ? `<span class="history-item-count">${item.count} 件</span>` : ""}
+        ${item.trademark ? `<span class="history-item-trademark">${escapeHtml(item.trademark)}</span>` : ""}
+      </div>
+    </div>
+  `).join("");
+}
+
+function loadHistoryItem(idx) {
+  const list = loadHistory();
+  const item = list[idx];
+  if (!item || !item.url) return;
+  const urlInput = document.getElementById("url-input");
+  if (urlInput) {
+    urlInput.value = item.url;
+    // 商標名も復元
+    const tmInput = document.getElementById("trademark-input");
+    if (tmInput && item.trademark) tmInput.value = item.trademark;
+  }
+  closeHistory();
+  // ページ先頭へスクロール
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
 </script>
 
 </body>
