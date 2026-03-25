@@ -85,7 +85,7 @@ async def _schedule_cleanup(session_id: str, delay: int) -> None:
 # URL → PDF
 # ─────────────────────────────────────────────
 
-async def url_to_pdf(url: str, output_path: str) -> None:
+async def url_to_pdf(url: str, output_path: str, text_queue: asyncio.Queue = None) -> None:
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             args=[
@@ -141,7 +141,14 @@ async def url_to_pdf(url: str, output_path: str) -> None:
         block_keywords = ["アクセスできません", "403", "Access Denied", "Forbidden", "blocked", "Bot detection"]
         if any(kw.lower() in page_text.lower() for kw in block_keywords) and len(page_text.strip()) < 500:
             await browser.close()
-            raise HTTPException(400, "このサイトはBot対策によりアクセスがブロックされました。別のURLをお試しください。")
+            err = HTTPException(400, "このサイトはBot対策によりアクセスがブロックされました。別のURLをお試しください。")
+            if text_queue:
+                await text_queue.put(err)
+            raise err
+
+        # テキストが取得できた時点でキューに送信 → Claude解析を並列スタートさせる
+        if text_queue:
+            await text_queue.put(page_text)
 
         await page.pdf(
             path=output_path,
@@ -1130,22 +1137,56 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
     session_id = str(uuid.uuid4())
     pdf_path = f"/tmp/{session_id}_orig.pdf"
 
+    claude_task = None
     try:
+        # ── 並列処理：ページ取得とClaude解析を重ねて実行 ──
+        text_queue = asyncio.Queue()
+
+        async def run_playwright():
+            try:
+                await url_to_pdf(request.url, pdf_path, text_queue)
+            except Exception as e:
+                if text_queue.empty():
+                    await text_queue.put(e)
+                raise
+
+        pdf_task = asyncio.create_task(run_playwright())
+
+        # テキストが届くまで待つ（ページ読み込み完了のタイミング）
         try:
-            await url_to_pdf(request.url, pdf_path)
+            text_or_err = await asyncio.wait_for(text_queue.get(), timeout=60)
+        except asyncio.TimeoutError:
+            pdf_task.cancel()
+            raise HTTPException(400, "ページの読み込みがタイムアウトしました。時間をおいて再試行してください。")
+
+        if isinstance(text_or_err, BaseException):
+            await pdf_task  # PDF taskのエラーも伝播させる
+            raise text_or_err
+
+        text = text_or_err
+        if len(text.strip()) < 80:
+            pdf_task.cancel()
+            raise HTTPException(400, "このページはテキストを抽出できませんでした。Cloudflare等のボット対策で保護されている可能性があります。")
+
+        # Claude解析をPDF生成と並列スタート
+        claude_task = asyncio.create_task(
+            analyze_with_claude(text, request.url, request.trademark)
+        )
+
+        # PDF生成の完了を待つ
+        try:
+            await pdf_task
+        except HTTPException:
+            raise
         except Exception as e:
             err = str(e)
             if "net::" in err or "ERR_" in err:
-                raise HTTPException(400, f"URLにアクセスできませんでした。URLが正しいか確認してください。（{err}）")
-            if "Timeout" in err or "timeout" in err:
-                raise HTTPException(400, "ページの読み込みがタイムアウトしました。時間をおいて再試行してください。")
+                raise HTTPException(400, f"URLにアクセスできませんでした。（{err}）")
             raise HTTPException(400, f"ページの読み込みに失敗しました: {err}")
 
-        text = extract_text_from_pdf(pdf_path)
-        if len(text.strip()) < 80:
-            raise HTTPException(400, "このページはテキストを抽出できませんでした。Cloudflare等のボット対策で保護されている可能性があります。")
-
-        analysis = await analyze_with_claude(text, request.url, request.trademark)
+        # Claude解析の完了を待つ（PDF生成中に並列実行済み）
+        analysis = await claude_task
+        claude_task = None
 
         violations_raw = analysis.get("violations", [])
         positions = find_violation_positions(pdf_path, violations_raw)
@@ -1185,8 +1226,12 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
         }
 
     except HTTPException:
+        if claude_task and not claude_task.done():
+            claude_task.cancel()
         raise
     except Exception as e:
+        if claude_task and not claude_task.done():
+            claude_task.cancel()
         if os.path.exists(pdf_path):
             try:
                 os.remove(pdf_path)
