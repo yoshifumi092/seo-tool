@@ -92,8 +92,47 @@ def validate_url(url: str) -> bool:
     return True
 
 
+def _session_file(session_id: str) -> str:
+    return f"/tmp/{session_id}_session.json"
+
+
+def _save_session(session_id: str, data: dict) -> None:
+    """セッションデータをファイルに保存（サーバー再起動後も復元できるように）。"""
+    try:
+        with open(_session_file(session_id), "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+    except Exception as e:
+        import sys as _sys
+        print(f"[session] save error: {e}", flush=True, file=_sys.stderr)
+
+
+def _load_session(session_id: str) -> dict | None:
+    """メモリにない場合はファイルから復元する。"""
+    path = _session_file(session_id)
+    if not os.path.exists(path):
+        return None
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        # PDFファイルが実際に存在する場合のみ復元
+        if data.get("pdf_path") and os.path.exists(data["pdf_path"]):
+            sessions[session_id] = data
+            return data
+    except Exception as e:
+        import sys as _sys
+        print(f"[session] load error: {e}", flush=True, file=_sys.stderr)
+    return None
+
+
+def get_session(session_id: str) -> dict | None:
+    """メモリ → ファイルの順でセッションを取得する。"""
+    return sessions.get(session_id) or _load_session(session_id)
+
+
 def cleanup_session(session_id: str) -> None:
     session = sessions.pop(session_id, None)
+    if not session:
+        session = _load_session(session_id)
     if not session:
         return
     for key in ("pdf_path", "output_path"):
@@ -103,6 +142,13 @@ def cleanup_session(session_id: str) -> None:
                 os.remove(path)
             except OSError:
                 pass
+    # セッションファイルも削除
+    sf = _session_file(session_id)
+    if os.path.exists(sf):
+        try:
+            os.remove(sf)
+        except OSError:
+            pass
 
 
 async def _schedule_cleanup(session_id: str, delay: int) -> None:
@@ -1063,12 +1109,14 @@ async def create_summary_page(positions: list, article_title: str, trademark: st
 </html>"""
 
     summary_path = f"/tmp/{uuid.uuid4()}_summary.pdf"
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(args=["--no-sandbox", "--disable-setuid-sandbox"])
-        pg = await browser.new_page()
+    browser = await _get_browser()
+    context = await browser.new_context()
+    try:
+        pg = await context.new_page()
         await pg.set_content(html, wait_until="domcontentloaded")
         await pg.pdf(path=summary_path, format="A4", print_background=True)
-        await browser.close()
+    finally:
+        await context.close()
 
     return summary_path
 
@@ -1140,7 +1188,7 @@ async def list_models():
 @app.get("/api/debug/{session_id}")
 async def debug_session(session_id: str):
     """デバッグ用：セッションの違反データを確認する。"""
-    session = sessions.get(session_id)
+    session = get_session(session_id)
     if not session:
         raise HTTPException(404, "セッションが見つかりません。")
     violations = session.get("violations", [])
@@ -1230,7 +1278,7 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
         page_dims = [{"w": p.rect.width, "h": p.rect.height} for p in doc]
         doc.close()
 
-        sessions[session_id] = {
+        session_data = {
             "pdf_path": pdf_path,
             "url": request.url,
             "article_title": analysis.get("article_title", "記事"),
@@ -1243,6 +1291,8 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
             "page_dims": page_dims,
             "created_at": time.time(),
         }
+        sessions[session_id] = session_data
+        _save_session(session_id, session_data)
 
         sort_and_renumber(positions)
         background_tasks.add_task(_schedule_cleanup, session_id, SESSION_TTL)
@@ -1276,7 +1326,7 @@ async def analyze(request: AnalyzeRequest, background_tasks: BackgroundTasks):
 
 @app.get("/api/preview/{session_id}/{page_num}")
 async def preview_page(session_id: str, page_num: int):
-    session = sessions.get(session_id)
+    session = get_session(session_id)
     if not session:
         raise HTTPException(404, "セッションが見つかりません。")
 
@@ -1311,7 +1361,7 @@ async def preview_page(session_id: str, page_num: int):
 
 @app.delete("/api/session/{session_id}/violation/{idx}")
 async def delete_violation(session_id: str, idx: int):
-    session = sessions.get(session_id)
+    session = get_session(session_id)
     if not session:
         raise HTTPException(404, "セッションが見つかりません。")
 
@@ -1321,13 +1371,14 @@ async def delete_violation(session_id: str, idx: int):
 
     violations.pop(idx)
     sort_and_renumber(violations)
+    _save_session(session_id, session)
 
     return {"ok": True, "violations": violations}
 
 
 @app.patch("/api/session/{session_id}/violation/{idx}")
 async def update_violation(session_id: str, idx: int, request: UpdateViolationRequest):
-    session = sessions.get(session_id)
+    session = get_session(session_id)
     if not session:
         raise HTTPException(404, "セッションが見つかりません。")
     violations = session["violations"]
@@ -1341,12 +1392,13 @@ async def update_violation(session_id: str, idx: int, request: UpdateViolationRe
         violations[idx]["annotation_pos"] = request.annotation_pos
     if request.rect and len(request.rect) == 4:
         violations[idx]["rect"] = request.rect
+    _save_session(session_id, session)
     return {"ok": True, "violation": violations[idx]}
 
 
 @app.post("/api/session/{session_id}/add")
 async def add_area(session_id: str, request: AddAreaRequest):
-    session = sessions.get(session_id)
+    session = get_session(session_id)
     if not session:
         raise HTTPException(404, "セッションが見つかりません。")
 
@@ -1376,13 +1428,14 @@ async def add_area(session_id: str, request: AddAreaRequest):
     }
     violations.append(new_v)
     sort_and_renumber(violations)
+    _save_session(session_id, session)
 
     return {"ok": True, "violation": new_v, "violations": violations}
 
 
 @app.post("/api/generate")
 async def generate(request: GenerateRequest):
-    session = sessions.get(request.session_id)
+    session = get_session(request.session_id)
     if not session:
         raise HTTPException(404, "セッションが見つかりません（1時間で自動削除されます）。再度「解析する」を押してください。")
 
