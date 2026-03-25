@@ -230,14 +230,6 @@ async def url_to_pdf(url: str, output_path: str, text_queue: asyncio.Queue = Non
 # テキスト抽出
 # ─────────────────────────────────────────────
 
-def extract_text_from_pdf(pdf_path: str) -> str:
-    doc = fitz.open(pdf_path)
-    pages_text = []
-    for page in doc:
-        pages_text.append(page.get_text())
-    doc.close()
-    return "\n".join(pages_text)
-
 
 # ─────────────────────────────────────────────
 # AI解析
@@ -421,10 +413,6 @@ def _parse_ai_response(response_text: str) -> dict:
     # JSON修正を適用してからパース試行
     cleaned = _fix_json_text(text)
 
-    parsers = [
-        lambda t: json.loads(t),
-        lambda t: json.loads(_fix_json_text(t)),
-    ]
     for t in [cleaned, text]:
         try:
             result = json.loads(t)
@@ -1171,29 +1159,12 @@ async def root():
 @app.get("/api/status")
 async def api_status():
     """APIキーの設定状況を確認する診断エンドポイント。"""
-    gemini_key = os.environ.get("GEMINI_API_KEY", "")
+    anthropic_key = os.environ.get("ANTHROPIC_API_KEY", "")
     return {
-        "gemini_key_set": bool(gemini_key),
-        "gemini_key_preview": (gemini_key[:8] + "...") if gemini_key else "未設定",
+        "status": "ok",
+        "anthropic_key_set": bool(anthropic_key),
+        "anthropic_key_preview": (anthropic_key[:8] + "...") if anthropic_key else "未設定",
     }
-
-
-@app.get("/api/models")
-async def list_models():
-    """利用可能なGeminiモデルを確認する。"""
-    import urllib.request
-    import json as _json
-    api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        return {"error": "APIキー未設定"}
-    url = f"https://generativelanguage.googleapis.com/v1beta/models?key={api_key}"
-    try:
-        with urllib.request.urlopen(url, timeout=10) as resp:
-            data = _json.loads(resp.read())
-        names = [m["name"] for m in data.get("models", []) if "generateContent" in m.get("supportedGenerationMethods", [])]
-        return {"models": names}
-    except Exception as e:
-        return {"error": str(e)}
 
 
 @app.get("/api/debug/{session_id}")

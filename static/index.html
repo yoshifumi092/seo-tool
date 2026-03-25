@@ -1542,15 +1542,18 @@ async function addNewArea(pageIdx, pdfRect) {
     redrawAllCanvases();
 
     // 追加した違反の編集フォームを自動で開く
-    const newIdx = editor.violations.length - 1;
+    // ソート後の正確なインデックスをdata.violationのtextで特定する
+    const addedText = data.violation?.text;
+    const newIdx = addedText
+      ? editor.violations.findIndex(v => v.text === addedText && v.page_num === pageIdx)
+      : editor.violations.length - 1;
     setTimeout(() => {
-      // 注釈ラベルの編集フォームを開く（スクロールしない：ユーザーは描いた位置にいる）
+      if (newIdx < 0) return;
       const annLabel = document.querySelector(`.ann-label[data-idx="${newIdx}"]`);
       if (annLabel) {
         const form = annLabel.querySelector(".ann-edit-form");
         if (form) form.classList.add("open");
       } else {
-        // サイドパネルの編集ボタンを開く
         const listItem = document.querySelector(`[data-violation-idx="${newIdx}"]`);
         if (listItem) {
           const editBtn = listItem.querySelector(".edit-btn");
