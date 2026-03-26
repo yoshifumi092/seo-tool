@@ -875,7 +875,7 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
         box_w = float(ann_size[0])
         box_h = float(ann_size[1])
     else:
-        box_w = 200.0
+        box_w = 195.0
         exp_lines = max(2, (len(explanation) + 21) // 22)
         box_h = float(min(max(14 + exp_lines * 12 + 10, 52), 140))
     chars = max(10, int(box_w / 9))
@@ -889,10 +889,10 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
     ax = max(0.0, min(ax, pw - box_w))
     ay = max(0.0, min(ay, ph - box_h))
     ann_rect = fitz.Rect(ax, ay, ax + box_w, ay + box_h)
-    inner    = fitz.Rect(ax + 4, ay + 4, ax + box_w - 4, ay + box_h - 4)
+    inner    = fitz.Rect(ax + 6, ay + 5, ax + box_w - 5, ay + box_h - 4)
 
     # ── 白背景ボックス ──
-    page.draw_rect(ann_rect, color=(0.75, 0, 0), fill=(1, 1, 1), width=1.0)
+    page.draw_rect(ann_rect, color=(0.75, 0, 0), fill=(1, 1, 1), width=1.5)
 
     # ── テキスト挿入（方法1: insert_htmlbox） ──
     label = f"【{num}】{vtype}" if num else vtype

@@ -1161,8 +1161,11 @@ function renderAnnotationLabels(pageIdx) {
     div.style.left = bx + "px";
     div.style.top = by + "px";
     if (v.annotation_size && v.annotation_size.length === 2) {
-      div.style.width    = (v.annotation_size[0] * scaleX) + "px";
+      div.style.width     = (v.annotation_size[0] * scaleX) + "px";
       div.style.minHeight = (v.annotation_size[1] * scaleY) + "px";
+    } else {
+      // PDFのデフォルト幅(boxWpdf=195)に合わせてUIも明示的に固定
+      div.style.width = (boxWpdf * scaleX) + "px";
     }
     div.innerHTML = `
       <button class="ann-edit-btn" title="編集">✎</button>
