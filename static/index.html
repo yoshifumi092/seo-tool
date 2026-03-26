@@ -1135,8 +1135,8 @@ function renderAnnotationLabels(pageIdx) {
   const scaleX = dispW / pi.pdfW;
   const scaleY = dispH / pi.pdfH;
 
-  // 注釈ボックスのPDF座標サイズ（大体）
-  const boxWpdf = 195, boxHpdf = 70;
+  // 注釈ボックスのPDF座標サイズ（Pythonのデフォルト値と一致させる）
+  const boxWpdf = 240, boxHpdf = 70;
 
   for (let i = 0; i < editor.violations.length; i++) {
     const v = editor.violations[i];

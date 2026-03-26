@@ -875,10 +875,10 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
         box_w = float(ann_size[0])
         box_h = float(ann_size[1])
     else:
-        box_w = 195.0
-        exp_lines = max(2, (len(explanation) + 21) // 22)
-        box_h = float(min(max(14 + exp_lines * 12 + 10, 52), 140))
-    chars = max(10, int(box_w / 9))
+        box_w = 240.0
+        exp_lines = max(2, (len(explanation) + 26) // 27)
+        box_h = float(min(max(16 + exp_lines * 13 + 10, 70), 160))
+    chars = max(10, int(box_w / 8.5))
 
     ann_pos = item.get("annotation_pos")
     if ann_pos and len(ann_pos) == 2:
@@ -899,9 +899,9 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
     inserted = False
     if hasattr(page, "insert_htmlbox"):
         html = (
-            f'<span style="font-size:9pt;font-weight:bold;color:#cc0000;">{label}</span>'
+            f'<span style="font-size:10pt;font-weight:bold;color:#cc0000;">{label}</span>'
             f'<br>'
-            f'<span style="font-size:8pt;color:#333333;">{explanation}</span>'
+            f'<span style="font-size:9pt;color:#333333;">{explanation}</span>'
         )
         try:
             page.insert_htmlbox(inner, html)
@@ -912,13 +912,13 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
     # ── テキスト挿入（方法2: CJKフォントファイルで insert_text） ──
     if not inserted and font_path:
         try:
-            page.insert_text(fitz.Point(ax + 4, ay + 13), label,
-                             fontsize=9, color=(0.75, 0, 0), fontfile=font_path)
-            ty, text = ay + 26, explanation
+            page.insert_text(fitz.Point(ax + 6, ay + 14), label,
+                             fontsize=10, color=(0.75, 0, 0), fontfile=font_path)
+            ty, text = ay + 28, explanation
             while text and ty < ay + box_h - 5:
-                page.insert_text(fitz.Point(ax + 4, ty), text[:chars],
-                                 fontsize=8, color=(0.15, 0.15, 0.15), fontfile=font_path)
-                text, ty = text[chars:], ty + 12
+                page.insert_text(fitz.Point(ax + 6, ty), text[:chars],
+                                 fontsize=9, color=(0.15, 0.15, 0.15), fontfile=font_path)
+                text, ty = text[chars:], ty + 13
             inserted = True
         except Exception:
             pass
