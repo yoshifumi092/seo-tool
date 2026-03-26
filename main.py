@@ -390,10 +390,13 @@ def _build_analysis_prompt(
 - テキスト内に存在しない文字列を引用しない
 - 同じ趣旨の指摘を言い換えで重複させない
 
-【指摘しないもの】
+【指摘しないもの・text引用禁止テキスト】
 - ナビゲーション・メニュー・パンくず・タグ・カテゴリ・コピーライト
 - 著者名・日付・SNSボタン単体
 - 完全に中立な事実説明・導入文
+- ボタン・バナー・CTAの文言単体（例：「LINEで相談する」「無料登録はこちら」「お問い合わせ」）
+  → LINE誘導の問題を指摘する場合、ボタン文言ではなく「誘導先の案内文・導線の説明文」を引用すること
+  → 例：「〇〇の代わりにこちらへ」「安全な相談先はこちら」等、誘導を説明している本文テキストを引用する
 
 【抽出ルール】
 - 問題性のある箇所はすべて抽出する。見落とすことは削除申請の材料を失うことと同義であるため厳禁
@@ -722,11 +725,23 @@ def _normalize_search_text(text: str) -> str:
 def _best_rect(rects: list, page_height: float) -> fitz.Rect:
     """
     複数のマッチ候補から最適な1件を返す。
-    優先順位: ① ページ上部150pt以外かつ下部50pt以外の本文領域
+    優先順位: ① ページ上部200pt・下部80pt以外 かつ 高さ/幅が異常でない本文領域
               ② それ以外ならy座標が最も大きい（本文に最も近い）もの
-    ページ上部はヘッダー・ナビゲーション・パンくずリストが集中するため除外する。
+    除外条件:
+      - y0 < 200: ヘッダー・ナビゲーション・パンくずリスト
+      - y1 > page_height - 80: フッター・コピーライト
+      - 高さ < 5pt: 細すぎてUI装飾の可能性大
     """
-    body = [r for r in rects if r.y0 > 150 and r.y1 < page_height - 50]
+    def _is_body(r: fitz.Rect) -> bool:
+        if r.y0 < 200:
+            return False
+        if r.y1 > page_height - 80:
+            return False
+        if (r.y1 - r.y0) < 5:   # 極端に薄い矩形はUI要素
+            return False
+        return True
+
+    body = [r for r in rects if _is_body(r)]
     candidates = body if body else rects
     return min(candidates, key=lambda r: r.y0)
 
@@ -741,14 +756,18 @@ def _search_text_in_page(page: fitz.Page, normalized_text: str) -> fitz.Rect | N
 
     # ── 方法1: search_for ──
     # 短い文字列ほどナビゲーション等への誤マッチが増えるため、
-    # 最短でも12文字までしか短縮しない
-    for length in [len(normalized_text), 40, 30, 20, 15, 12]:
+    # 最短でも15文字までしか短縮しない（12→15に引き上げ）
+    for length in [len(normalized_text), 40, 30, 20, 15]:
         cand = normalized_text[:length].strip()
-        if len(cand) < 8:
+        if len(cand) < 10:
             break
         rects = page.search_for(cand, quads=False)
         if rects:
-            return _best_rect(rects, ph)
+            result = _best_rect(rects, ph)
+            # 本文領域外のマッチのみの場合はスキップして短縮版で再試行
+            if result.y0 < 200 or (result.y1 - result.y0) < 5:
+                continue
+            return result
 
     # ── 方法2: rawdict で文字単位の位置マッチング ──
     target_nospace = re.sub(r'\s+', '', normalized_text)[:40]
