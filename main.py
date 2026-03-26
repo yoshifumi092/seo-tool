@@ -391,11 +391,11 @@ def _build_analysis_prompt(
     {{
       "text": "問題のある記述（テキストから15〜60文字を一字一句そのまま引用）",
       "statement_type": "事実主張／意見論評／推測／印象操作　のいずれか",
-      "type": "問題類型の名称のみ（記号不要。例：根拠不明な断定、商標権侵害・不正競争、名誉毀損リスク）",
+      "type": "以下8種類から1つだけ選ぶ（記号・類型番号は絶対に使わない）：名誉毀損リスク／信用毀損リスク／営業妨害／商標権侵害・不正競争／事実誤認／根拠不明な断定／印象操作・ミスリード／競合誘導バイアス",
       "severity": 問題の深刻度（1〜5の整数。5が最重要）,
       "confidence": "高／中／低（本文だけで問題性を説明できるか）",
       "reader_impression": "一般読者がこの表現から受ける印象（1文）",
-      "explanation": "文言→読者印象→問題本質→侵害観点を1文に凝縮",
+      "explanation": "問題の核心を50文字以内の1文で。冗長な前置き不要",
       "deletion_comment": "削除申請転用向け指摘文案（1文・シンプルに）"
     }}
   ],
@@ -828,8 +828,15 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
     """1件の違反を指定ページに描画する（赤枠＋注釈テキストボックス）。"""
     r = item["rect"]
     rect = fitz.Rect(r[0], r[1], r[2], r[3]) if isinstance(r, (list, tuple)) else r
-    # アルファベット記号（例: "D: "）を除去
-    vtype = re.sub(r'^[A-H]:\s*', '', item.get("type", ""))
+    # アルファベット記号・類型番号表記を除去（例: "D: "、"E類型"）
+    _TYPE_MAP = {
+        "A類型": "名誉毀損リスク", "B類型": "信用毀損リスク", "C類型": "営業妨害",
+        "D類型": "商標権侵害・不正競争", "E類型": "事実誤認", "F類型": "根拠不明な断定",
+        "G類型": "印象操作・ミスリード", "H類型": "競合誘導バイアス",
+    }
+    raw_type = item.get("type", "")
+    vtype = _TYPE_MAP.get(raw_type, raw_type)
+    vtype = re.sub(r'^[A-H]:\s*', '', vtype)
     explanation = item.get("explanation", "")
     pw, ph = page.rect.width, page.rect.height
 
