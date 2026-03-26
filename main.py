@@ -235,7 +235,7 @@ async def url_to_pdf(url: str, output_path: str, text_queue: asyncio.Queue = Non
             path=output_path,
             format="A4",
             print_background=True,
-            margin={"top": "15px", "bottom": "15px", "left": "15px", "right": "15px"},
+            margin={"top": "12mm", "bottom": "12mm", "left": "12mm", "right": "12mm"},
         )
     finally:
         await context.close()  # ページは閉じるがブラウザは維持
