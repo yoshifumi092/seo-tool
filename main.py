@@ -733,15 +733,18 @@ def _best_rect(rects: list, page_height: float) -> fitz.Rect:
       - 高さ < 5pt: 細すぎてUI装飾の可能性大
     """
     def _is_body(r: fitz.Rect) -> bool:
-        if r.y0 < 200:
+        if r.y0 < 280:            # ヘッダー・ナビ・パンくず除外（200→280に拡大）
             return False
         if r.y1 > page_height - 80:
             return False
-        if (r.y1 - r.y0) < 5:   # 極端に薄い矩形はUI要素
+        if (r.y1 - r.y0) < 8:    # 薄い矩形除外（5→8ptに引き上げ）
             return False
         return True
 
     body = [r for r in rects if _is_body(r)]
+    # 本文候補がなければ、高さが十分な候補だけに絞って再試行（ナビ完全除外は諦めない）
+    if not body:
+        body = [r for r in rects if (r.y1 - r.y0) >= 8]
     candidates = body if body else rects
     return min(candidates, key=lambda r: r.y0)
 
@@ -765,7 +768,7 @@ def _search_text_in_page(page: fitz.Page, normalized_text: str) -> fitz.Rect | N
         if rects:
             result = _best_rect(rects, ph)
             # 本文領域外のマッチのみの場合はスキップして短縮版で再試行
-            if result.y0 < 200 or (result.y1 - result.y0) < 5:
+            if result.y0 < 280 or (result.y1 - result.y0) < 8:
                 continue
             return result
 
