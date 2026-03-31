@@ -1034,10 +1034,12 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path, occupied: li
         box_h = float(ann_size[1])
     else:
         box_w = 240.0
-        exp_lines = max(2, (len(explanation) + 26) // 27)
-        law_lines = max(0, (len(legal_basis) + 26) // 27) if legal_basis else 0
-        box_h = float(min(max(16 + (exp_lines + law_lines) * 13 + 14, 70), 220))
-    chars = max(10, int(box_w / 8.5))
+        _cpl = max(10, int(box_w / font_size))  # 1行あたりの文字数（フォントサイズに比例）
+        _lh  = font_size + 4                     # 行高（フォントサイズ＋余白）
+        exp_lines = max(2, (len(explanation) + _cpl - 1) // _cpl)
+        law_lines = max(0, (len(legal_basis) + _cpl - 1) // _cpl) if legal_basis else 0
+        box_h = float(min(max(16 + (exp_lines + law_lines) * _lh + 14, font_size * 7), 280))
+    chars = max(10, int(box_w / font_size))
 
     ann_pos = item.get("annotation_pos")
     if ann_pos and len(ann_pos) == 2:
