@@ -623,12 +623,24 @@ async def _call_claude_once(
     api_key = os.environ["ANTHROPIC_API_KEY"]
     prompt = _build_analysis_prompt(text_chunk, url, trademark_hint, section_label)
 
+    system_prompt = (
+        "あなたは記事削除申請準備AIです。必ず純粋なJSONのみ返すこと。コードブロック不要。\n"
+        "【最重要ルール】legal_basis フィールドは必ず次の2文形式で出力すること：\n"
+        "1文目：「○○法第○条○項に該当すると考える。」\n"
+        "2文目：「同条には「（条文の核心部分）」と規定されており、「（記事の問題表現）」といった表現は同条に該当する。」\n"
+        "例：「刑法第230条第1項に該当すると考える。同条には「公然と事実を摘示し、人の名誉を毀損した者は、"
+        "その事実の有無にかかわらず、三年以下の拘禁刑又は五十万円以下の罰金に処する」と規定されており、"
+        "「○○は詐欺まがいの手口を使っている」といった表現は同条に該当する。」\n"
+        "explanation・deletion_comment・legal_basis に「A類型」「B類型」等の記号を絶対に書かない。"
+    )
+
     def _call():
         client = anthropic.Anthropic(api_key=api_key)
         message = client.messages.create(
             model="claude-sonnet-4-6",
             max_tokens=16000,
             temperature=0.2,
+            system=system_prompt,
             messages=[{"role": "user", "content": prompt}],
         )
         return message.content[0].text
