@@ -497,18 +497,18 @@
     .ann-label .ann-title {
       font-weight: 700;
       color: #b00000;
-      font-size: 10px;
+      font-size: var(--ann-title-size, 10px);
       margin-bottom: 2px;
       word-break: break-all;
     }
     .ann-label .ann-body {
       color: #333;
-      font-size: 9px;
+      font-size: var(--ann-body-size, 9px);
       word-break: break-all;
     }
     .ann-label .ann-legal {
       color: #555;
-      font-size: 8px;
+      font-size: var(--ann-legal-size, 8px);
       word-break: break-all;
       margin-top: 4px;
       padding-top: 4px;
@@ -1910,6 +1910,14 @@ function loadHistoryItem(idx) {
   // ページ先頭へスクロール
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
+
+// 注釈フォントサイズのリアルタイムプレビュー
+document.getElementById("annotation-font-size").addEventListener("input", function () {
+  const sz = parseInt(this.value) || 9;
+  document.documentElement.style.setProperty("--ann-title-size", (sz + 1) + "px");
+  document.documentElement.style.setProperty("--ann-body-size", sz + "px");
+  document.documentElement.style.setProperty("--ann-legal-size", (sz - 1) + "px");
+});
 </script>
 
 </body>
