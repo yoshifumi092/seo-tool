@@ -681,6 +681,12 @@
       <span id="mode-info">🖱️ 赤い枠をクリックで削除 ／ テキストラベルをドラッグで移動できます</span>
       <div class="toolbar-actions">
         <button class="btn btn-mode" id="toggle-mode-btn" onclick="toggleDrawMode()">✏️ 追加モード</button>
+        <label style="display:flex;align-items:center;gap:4px;font-size:12px;color:#555;">
+          指摘文字サイズ
+          <input type="number" id="annotation-font-size" value="9" min="6" max="16" step="1"
+            style="width:48px;padding:3px 6px;border:1px solid #ccc;border-radius:4px;font-size:12px;text-align:center;">
+          pt
+        </label>
         <button class="btn btn-success" id="editor-download-btn" onclick="downloadPDF()">📥 PDFダウンロード</button>
       </div>
     </div>
@@ -1777,7 +1783,11 @@ async function downloadPDF() {
     const res = await fetch("/api/generate", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: editor.sessionId, trademark: editor.trademark }),
+      body: JSON.stringify({
+        session_id: editor.sessionId,
+        trademark: editor.trademark,
+        annotation_font_size: parseInt(document.getElementById("annotation-font-size").value) || 9,
+      }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));

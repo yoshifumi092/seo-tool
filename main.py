@@ -233,7 +233,7 @@ async def url_to_pdf(url: str, output_path: str, text_queue: asyncio.Queue = Non
 
         await page.pdf(
             path=output_path,
-            width="1920px",
+            width="1440px",
             print_background=True,
             margin={"top": "12mm", "bottom": "12mm", "left": "12mm", "right": "12mm"},
         )
@@ -978,7 +978,7 @@ def sort_and_renumber(violations: list) -> None:
         v["number"] = i + 1
 
 
-def _draw_violation_on_page(page: fitz.Page, item: dict, font_path, occupied: list = None) -> None:
+def _draw_violation_on_page(page: fitz.Page, item: dict, font_path, occupied: list = None, font_size: int = 9) -> None:
     """1件の違反を指定ページに描画する（赤枠＋注釈テキストボックス）。occupied に既配置ボックスを渡すと重複回避する。"""
     r = item["rect"]
     rect = fitz.Rect(r[0], r[1], r[2], r[3]) if isinstance(r, (list, tuple)) else r
@@ -1064,9 +1064,9 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path, occupied: li
             if legal_basis else ""
         )
         html = (
-            f'<span style="font-size:10pt;font-weight:bold;color:#cc0000;">{label}</span>'
+            f'<span style="font-size:{font_size + 1}pt;font-weight:bold;color:#cc0000;">{label}</span>'
             f'<br>'
-            f'<span style="font-size:9pt;color:#333333;">{explanation}</span>'
+            f'<span style="font-size:{font_size}pt;color:#333333;">{explanation}</span>'
             f'{law_html}'
         )
         try:
@@ -1079,18 +1079,18 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path, occupied: li
     if not inserted and font_path:
         try:
             page.insert_text(fitz.Point(ax + 6, ay + 14), label,
-                             fontsize=10, color=(0.75, 0, 0), fontfile=font_path)
+                             fontsize=font_size + 1, color=(0.75, 0, 0), fontfile=font_path)
             ty, text = ay + 28, explanation
             while text and ty < ay + box_h - 5:
                 page.insert_text(fitz.Point(ax + 6, ty), text[:chars],
-                                 fontsize=9, color=(0.15, 0.15, 0.15), fontfile=font_path)
-                text, ty = text[chars:], ty + 13
+                                 fontsize=font_size, color=(0.15, 0.15, 0.15), fontfile=font_path)
+                text, ty = text[chars:], ty + font_size + 4
             if legal_basis and ty < ay + box_h - 5:
                 law_text = legal_basis
                 while law_text and ty < ay + box_h - 5:
                     page.insert_text(fitz.Point(ax + 6, ty), law_text[:chars],
-                                     fontsize=8, color=(0.35, 0.35, 0.35), fontfile=font_path)
-                    law_text, ty = law_text[chars:], ty + 12
+                                     fontsize=font_size - 1, color=(0.35, 0.35, 0.35), fontfile=font_path)
+                    law_text, ty = law_text[chars:], ty + font_size + 3
             inserted = True
         except Exception:
             pass
@@ -1098,15 +1098,15 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path, occupied: li
     # ── テキスト挿入（方法3: ASCII フォールバック） ──
     if not inserted:
         page.insert_text(fitz.Point(ax + 4, ay + 13), label[:30],
-                         fontsize=8, color=(0.75, 0, 0), fontname="Helv")
+                         fontsize=font_size - 1, color=(0.75, 0, 0), fontname="Helv")
         page.insert_text(fitz.Point(ax + 4, ay + 25), explanation[:55],
-                         fontsize=7, color=(0.15, 0.15, 0.15), fontname="Helv")
+                         fontsize=font_size - 2, color=(0.15, 0.15, 0.15), fontname="Helv")
         if legal_basis:
             page.insert_text(fitz.Point(ax + 4, ay + 37), legal_basis[:60],
-                             fontsize=6, color=(0.35, 0.35, 0.35), fontname="Helv")
+                             fontsize=font_size - 3, color=(0.35, 0.35, 0.35), fontname="Helv")
 
 
-def build_annotated_pdf(pdf_path: str, violations: list) -> fitz.Document:
+def build_annotated_pdf(pdf_path: str, violations: list, annotation_font_size: int = 9) -> fitz.Document:
     """
     グレースケール変換＋赤枠注釈を行い fitz.Document を返す。
     ポイント: 赤枠を「先に描画」してから画像を overlay=False で背面挿入する。
@@ -1126,7 +1126,7 @@ def build_annotated_pdf(pdf_path: str, violations: list) -> fitz.Document:
             occupied_rects: list = []
             for item in violations:
                 if item.get("page_num") == page_num and item.get("rect"):
-                    _draw_violation_on_page(new_page, item, font_path, occupied=occupied_rects)
+                    _draw_violation_on_page(new_page, item, font_path, occupied=occupied_rects, font_size=annotation_font_size)
 
             # ② グレースケール画像を背面に挿入（overlay=False = 既存の描画の後ろ）
             mat = fitz.Matrix(2, 2)
@@ -1346,6 +1346,7 @@ class AnalyzeRequest(BaseModel):
 class GenerateRequest(BaseModel):
     session_id: str
     trademark: str
+    annotation_font_size: int = 9
 
 
 class AddAreaRequest(BaseModel):
@@ -1673,7 +1674,7 @@ async def generate(request: GenerateRequest):
         violations = session["violations"]
         article_title = session.get("article_title", "記事")
 
-        final_doc = build_annotated_pdf(pdf_path, violations)
+        final_doc = build_annotated_pdf(pdf_path, violations, annotation_font_size=request.annotation_font_size)
         final_path = f"/tmp/{request.session_id}_final.pdf"
         try:
             final_doc.save(final_path)
