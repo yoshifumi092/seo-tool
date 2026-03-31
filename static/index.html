@@ -302,6 +302,9 @@
       margin-bottom: 6px; font-style: italic; word-break: break-all;
     }
     .violation-explanation { font-size: 12px; color: #555; line-height: 1.6; }
+    .violation-legal { font-size: 11px; color: #666; line-height: 1.6; margin-top: 6px;
+      border-left: 3px solid #c0392b; padding-left: 8px; background: #fff8f8;
+      border-radius: 0 4px 4px 0; white-space: pre-wrap; word-break: break-all; }
 
     .generate-area {
       text-align: center;
@@ -912,6 +915,7 @@ function renderResults(data) {
         </div>
         <div class="violation-text">${escapeHtml(v.text)}</div>
         <div class="violation-explanation">${escapeHtml(v.explanation)}</div>
+        ${v.legal_basis ? `<div class="violation-legal">${escapeHtml(v.legal_basis)}</div>` : ''}
       `;
       list.appendChild(item);
     });
@@ -1106,19 +1110,43 @@ function redrawAllCanvases() {
 
 // ── 注釈テキストオーバーレイ ──
 
-function autoPlaceAnnotation(rect, pdfW, pdfH, boxWpdf, boxHpdf, margin) {
-  // rect: {x0,y0,x1,y1} PDF座標
+function autoPlaceAnnotation(rect, pdfW, pdfH, boxWpdf, boxHpdf, margin, occupied) {
+  // rect: [x0,y0,x1,y1] PDF座標。occupied: [[ax,ay,ax+w,ay+h], ...] 既配置ボックスのリスト
   margin = margin || 6;
+  occupied = occupied || [];
   const rx0=rect[0], ry0=rect[1], rx1=rect[2], ry1=rect[3];
-  if (ry1 + boxHpdf + margin <= pdfH)
-    return [Math.max(0, Math.min(rx0, pdfW - boxWpdf)), ry1 + margin];
-  if (rx1 + boxWpdf + margin <= pdfW)
-    return [rx1 + margin, Math.max(0, Math.min(ry0, pdfH - boxHpdf))];
-  if (rx0 - boxWpdf - margin >= 0)
-    return [rx0 - boxWpdf - margin, Math.max(0, Math.min(ry0, pdfH - boxHpdf))];
-  if (ry0 - boxHpdf - margin >= 0)
-    return [Math.max(0, Math.min(rx0, pdfW - boxWpdf)), ry0 - boxHpdf - margin];
-  return [Math.max(0, Math.min(rx0, pdfW - boxWpdf)), Math.max(0, pdfH - boxHpdf - 5)];
+  const step = boxHpdf + margin;
+
+  function clamp(ax, ay) {
+    return [Math.max(0, Math.min(ax, pdfW - boxWpdf)), Math.max(0, Math.min(ay, pdfH - boxHpdf))];
+  }
+  function overlapsAny(ax, ay) {
+    const bx1 = ax + boxWpdf, by1 = ay + boxHpdf;
+    return occupied.some(o => ax < o[2] && bx1 > o[0] && ay < o[3] && by1 > o[1]);
+  }
+
+  const candidates = [];
+  for (let k = 0; k < 6; k++) {
+    const cy = ry1 + margin + k * step;
+    if (cy + boxHpdf <= pdfH) candidates.push(clamp(rx0, cy));           // 下
+  }
+  for (let k = 0; k < 6; k++) {
+    const cy = ry0 + k * step;
+    if (rx1 + boxWpdf + margin <= pdfW && cy + boxHpdf <= pdfH) candidates.push(clamp(rx1 + margin, cy)); // 右
+  }
+  for (let k = 0; k < 6; k++) {
+    const cy = ry0 + k * step;
+    if (rx0 - boxWpdf - margin >= 0 && cy + boxHpdf <= pdfH) candidates.push(clamp(rx0 - boxWpdf - margin, cy)); // 左
+  }
+  for (let k = 0; k < 6; k++) {
+    const cy = ry0 - boxHpdf - margin - k * step;
+    if (cy >= 0) candidates.push(clamp(rx0, cy));                        // 上
+  }
+
+  for (const pos of candidates) {
+    if (!overlapsAny(pos[0], pos[1])) return pos;
+  }
+  return candidates.length ? candidates[0] : clamp(rx0, pdfH - boxHpdf - 5);
 }
 
 function renderAnnotationLabels(pageIdx) {
@@ -1137,6 +1165,7 @@ function renderAnnotationLabels(pageIdx) {
 
   // 注釈ボックスのPDF座標サイズ（Pythonのデフォルト値と一致させる）
   const boxWpdf = 240, boxHpdf = 70;
+  const occupiedBoxes = []; // 既配置ボックス追跡（重複回避）
 
   for (let i = 0; i < editor.violations.length; i++) {
     const v = editor.violations[i];
@@ -1147,8 +1176,12 @@ function renderAnnotationLabels(pageIdx) {
     if (v.annotation_pos && v.annotation_pos.length === 2) {
       [ax, ay] = v.annotation_pos;
     } else {
-      [ax, ay] = autoPlaceAnnotation(v.rect, pi.pdfW, pi.pdfH, boxWpdf, boxHpdf);
+      [ax, ay] = autoPlaceAnnotation(v.rect, pi.pdfW, pi.pdfH, boxWpdf, boxHpdf, 6, occupiedBoxes);
     }
+    // 配置済みとして記録
+    const bw = (v.annotation_size && v.annotation_size.length === 2) ? v.annotation_size[0] : boxWpdf;
+    const bh = (v.annotation_size && v.annotation_size.length === 2) ? v.annotation_size[1] : boxHpdf;
+    occupiedBoxes.push([ax, ay, ax + bw, ay + bh]);
 
     // PDF→ブラウザ座標
     const bx = ax * scaleX;
@@ -1620,6 +1653,7 @@ function renderEditorViolationList() {
       </div>
       <div class="editor-v-text" onclick="jumpToViolation(${i})" style="cursor:pointer;">${escapeHtml(preview)}</div>
       <div class="editor-v-exp" id="v-exp-label-${i}">${escapeHtml(v.explanation)}</div>
+      ${v.legal_basis ? `<div class="violation-legal" style="margin:4px 0 6px 0;">${escapeHtml(v.legal_basis)}</div>` : ''}
       <button class="editor-v-edit-btn" onclick="toggleEditArea(${i})">✎ 編集</button>
       <div class="editor-v-edit-area" id="v-edit-${i}">
         <label>違反カテゴリ</label>

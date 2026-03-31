@@ -280,15 +280,15 @@ def _build_analysis_prompt(
   - 推測: おそらく・可能性がある・かもしれない等
   - 印象操作: 直接断定せず読者がネガティブに受け取るよう設計された表現
 
-第3段階: 以下の問題類型から最も適切なものを選んで分類する
-  各類型の定義と典型例を必ず参照し、最も本質的な問題を表す類型を選ぶこと。
+第3段階: 以下の分類から最も適切なものを選んで分類する
+  各分類の定義と典型例を必ず参照し、最も本質的な問題を表す分類を選ぶこと。
   「信用毀損リスク」はあらゆる否定表現に適用できるため安易に選ばない。
-  より具体的な類型（E・F・G・H等）が当てはまる場合は、そちらを優先する。
+  より具体的な分類（事実誤認・根拠不明な断定・構成的ミスリード・競合誘導バイアス等）が当てはまる場合は、そちらを優先する。
 
-  A: 名誉毀損リスク
+  【名誉毀損リスク】
      → 対象を「詐欺師」「悪質」「犯罪的」等と直接断定、または疑問形・仮定形で実質的に断定している
      → 典型例：「〇〇は詐欺なのか」「悪質業者と言わざるを得ない」「被害者が続出」
-     → Bとの違い：「人格・道徳・違法性」を攻撃するならA、「品質・能力・信頼性」ならB
+     → 信用毀損リスクとの違い：「人格・道徳・違法性」を攻撃するなら名誉毀損リスク、「品質・能力・信頼性」なら信用毀損リスク
      → 名誉毀損として指摘する際は以下の4要素を必ず確認し、explanation/deletion_commentに反映する：
         1. 社会的評価の低下：当該表現により一般読者の対象への評価が低下するか
         2. 公益性の欠如：公人・公共の利害に関わらない個人・事業者への攻撃であるか
@@ -296,18 +296,18 @@ def _build_analysis_prompt(
         4. 違法性阻却事由の不存在：公益目的・真実性のいずれも認められないか
      → この4要素が揃うほど削除申請の論点として強くなる。確認できた要素は指摘文に明記する
 
-  B: 信用毀損リスク
-     → 他の類型（E/F/G）に当てはまらない、サービス品質・能力・実績への否定的評価
+  【信用毀損リスク】
+     → 事実誤認・根拠不明な断定・構成的ミスリードに当てはまらない、サービス品質・能力・実績への否定的評価
      → 典型例：「サポートが機能していない」「結果を出せる人がほとんどいない」
-     → 注意：根拠なしの断定ならF、事実の誤りならE、印象操作ならG を優先する
+     → 注意：根拠なしの断定なら「根拠不明な断定」、事実の誤りなら「事実誤認」、構成による誘導なら「構成的ミスリード」を優先する
 
-  C: 営業妨害・行動阻害
+  【営業妨害】
      → 読者の購買・登録・参加行動を直接妨げる表現、または受講検討者の不安を直接煽る構成
      → 典型例：「絶対に登録してはいけない」「お金を払う前に要注意」「今すぐ退会すべき」
      → 単一の文言だけでなく、記事全体が「検討者の意思決定を阻害する構成」になっている場合も該当する
 
-  D: 商標権侵害・ブランド毀損
-     → 不正競争防止法ではなく「商標権侵害」「信用毀損」「業務妨害」の観点で整理する
+  【商標権侵害・ブランド毀損】
+     → 「商標権侵害」「信用毀損」「業務妨害」の観点で整理する
      → 以下の3論点をそれぞれ独立して検討し、該当するものを指摘する
      ① 検索誘導構造：対象の商標名・人名をタイトル/URLに使って検索上位を狙い、読者を囲い込む行為
         → タイトルに名称があるだけでは弱い。「名称で検索した読者→記事経由→別サービスへ流れる構造」の有無を確認
@@ -318,18 +318,18 @@ def _build_analysis_prompt(
      ③ ブランド毀損：記事全体の構成が対象ブランドへの信頼・社会的評価を破壊する内容になっているか
         → 記事全体を「ブランドの社会的評価を不当に低下させる構成」として指摘する
 
-  E: 事実誤認・虚偽記載
+  【事実誤認・虚偽記載】
      → 最重要：執筆者が独自調査なしに断定的評価を下している点を問う（調査限界論ではなく断定の問題として指摘）
      → 客観資料（公式サイト・取材・一次情報）なしに事実として記述している表現
      → 典型例：「実績が確認できない」（調査不足を事実として断定）「料金は〇〇円」（確認根拠なし）「〇〇人が被害」（出典なし）
-     → 注意：「口コミが存在しない」等の不存在主張は、証拠があれば事実誤認として強く指摘できる。証拠がなければF類型（根拠不明な断定）として指摘する
+     → 注意：「口コミが存在しない」等の不存在主張は、証拠があれば「事実誤認」として強く指摘できる。証拠がなければ「根拠不明な断定」として指摘する
 
-  F: 根拠不明な断定・エビデンス不存在主張
+  【根拠不明な断定】
      → 出典・証拠・調査結果なしに断定的評価を下している
      → 典型例：「効果がないのは明らか」「エビデンスが一切ない」「実態は〇〇だ」（出典なし）
-     → E との違い：既知の事実と照合して誤りが疑われるならE、そもそも根拠を提示していないならF
+     → 事実誤認との違い：既知の事実と照合して誤りが疑われるなら「事実誤認」、そもそも根拠を提示していないなら「根拠不明な断定」
 
-  G: 事実摘示と評価表現の混在・構成的ミスリード
+  【構成的ミスリード】
      → 「印象操作」という抽象語は使わない。媒体側に「これは意見です」と逃げられないよう、以下を明確に分離して指摘する
      ① 事実摘示として書かれているが根拠がない表現
         → 「〇〇は△△だ」という断定形式でありながら根拠・出典を提示していない → 事実摘示として問題である
@@ -340,7 +340,7 @@ def _build_analysis_prompt(
         → これは「記事構成そのものが読者を誤導する設計である」として記事全体の問題として指摘する
      → 典型例：見出しだけ「〇〇は危険？」と断定的、疑問形で不安を煽る、ネガティブな口コミのみ選別引用
 
-  H: 競合誘導・アフィリエイトバイアス
+  【競合誘導バイアス】
      → 対象を否定した後に競合サービス・自社LINE・アフィリエイトリンクへ誘導する構造
      → 典型例：「〇〇より安全なサービスはこちら」「私が本当におすすめするのは〜」
      → 「評価記事・口コミ記事」を装いながら実質的に特定先への誘導を行っている場合は特に重大
@@ -351,7 +351,7 @@ def _build_analysis_prompt(
 
 第5段階: 特に見落としやすい以下のパターンを必ず確認する
   ① タイトル・見出しが本文より強断定になっていないか（「詐欺なのか？」等の疑問形も含む）
-  ② 商標名・人名をタイトル/URLに使いながら別のLINE・サービスへ誘導していないか（D類型・最重要）
+  ② 商標名・人名をタイトル/URLに使いながら別のLINE・サービスへ誘導していないか（商標権侵害・最重要）
   ③ 口コミ・体験談を選別引用してネガティブ印象を形成していないか
   ④ 「稼げない」「怪しい」「信頼性が低い」等を証拠なく事実のように書いていないか
   ⑤ 「安全なのか」「本当に大丈夫か」等の不安を煽る表現で購入・参加を妨げていないか
@@ -360,20 +360,20 @@ def _build_analysis_prompt(
   ⑦ 比較表で対象だけ評価を低く設定していないか（恣意的な評価軸・数値）
   ⑧ 記事末尾に「おすすめ」「安全な代替」等を誘導していないか
   ⑨ 「口コミがない」「実績が見当たらない」「評判が確認できない」等の不存在断定をしていないか
-     → 不存在を証拠なく断定するのは根拠不明な断定（F類型）として指摘する
-       対象の実績・口コミが実際に存在する証拠がある場合は、事実誤認（E類型）として強く指摘する
+     → 不存在を証拠なく断定するのは「根拠不明な断定」として指摘する
+       対象の実績・口コミが実際に存在する証拠がある場合は、「事実誤認」として強く指摘する
   ⑩ 「エビデンスがない」「根拠が示されていない」「証拠がない」等の断定をしていないか
-     → 客観的調査・一次情報の収集なしに断定するのは不適切な表現であり、F類型として指摘する
+     → 客観的調査・一次情報の収集なしに断定するのは不適切な表現であり、「根拠不明な断定」として指摘する
   ⑪ 「事実無根」「でたらめ」「嘘をついている」等の直接的な虚偽断定をしていないか
   ⑫ 【構造的問題】記事全体が「否定的結論ありき」で情報を選別していないか
      → ポジティブな情報・反証が存在するにも関わらず意図的に省いている構成は、読者に誤解を与える構成である
-       これは単一表現の問題ではなく記事全体の構造問題として指摘する（G類型）
+       これは単一表現の問題ではなく記事全体の構造問題として「構成的ミスリード」として指摘する
   ⑬ 【中立性欠如】取材・問い合わせ・当事者確認なしに一方的な評価を掲載していないか
      → 対象への取材・確認なしに断定的評価を下している記事は、客観性を欠いた不適切なコンテンツである
        「ポジティブ情報の不掲載」「一方的な情報選択」として指摘することで論点が強くなる
   ⑭ 【誘導記事パターン】「評価記事」「口コミまとめ」を装いながら特定先への誘導を行っていないか
      → 中立な評価記事を装いつつ、実質的に競合サービス・特定LINEへ誘導する構成は
-       読者に誤解を与える構成であり、比較誹謗型コンテンツとして強い論点になる（D/H類型）
+       読者に誤解を与える構成であり、「商標権侵害・ブランド毀損」または「競合誘導バイアス」として強い論点になる
 
 【断定レベルの使い分け】
 削除申請資料は「運営側がトラブルになりそうと感じる文章」にすることが最重要。
@@ -383,12 +383,54 @@ def _build_analysis_prompt(
 - 「〜し得る」「〜おそれがある」を使う場面：法的効果・権利侵害の成否など最終判断が必要な場合のみ
 - 避けるべき：「可能性がある」の多用。記事の構成・表現上の問題は断定的に指摘してよい
 
+【条文参照テーブル（このテーブル以外の条文を引用することは絶対禁止・ハルシネーション厳禁）】
+legal_basis フィールドは必ず以下のテーブルから1〜2件を選び記述すること。テーブルにない条文の引用・創作は絶対禁止。
+
+【名誉毀損リスク】
+  → 刑法第230条第1項：「公然と事実を摘示し、人の名誉を毀損した者は、その事実の有無にかかわらず、三年以下の拘禁刑又は五十万円以下の罰金に処する」
+  → 民法第709条：「故意又は過失によって他人の権利又は法律上保護される利益を侵害した者は、これによって生じた損害を賠償する責任を負う」
+
+【信用毀損リスク】
+  → 刑法第233条：「虚偽の風説を流布し、又は偽計を用いて、人の信用を毀損し、又はその業務を妨害した者は、三年以下の拘禁刑又は五十万円以下の罰金に処する」
+  → 民法第709条（同上）
+
+【営業妨害】
+  → 刑法第233条（同上）
+  → 刑法第234条：「威力を用いて人の業務を妨害した者も、前条の例による」
+  → 民法第709条（同上）
+
+【商標権侵害・ブランド毀損】
+  → 商標法第36条第1項：「商標権者又は専用使用権者は、自己の商標権又は専用使用権を侵害する者又は侵害するおそれがある者に対し、その侵害の停止又は予防を請求することができる」
+  → 商標法第37条第1号：登録商標と同一・類似の商標を指定商品・役務に使用する行為を商標権侵害とみなす
+  → 不正競争防止法第2条第1項第1号：「需要者の間に広く認識されている商品等表示と同一若しくは類似のものを使用し、他人の商品又は営業と混同を生じさせる行為」
+
+【事実誤認・虚偽記載】
+  → 景品表示法第5条第1号（優良誤認）：「商品又は役務の品質その他の内容について、実際のものよりも著しく優良であると示す表示」
+  → 景品表示法第5条第2号（有利誤認）：「価格その他の取引条件について、実際のものよりも著しく有利であると一般消費者に誤認される表示」
+  → 民法第709条（同上）
+
+【根拠不明な断定】
+  → 景品表示法第5条第1号（同上）
+  → 民法第709条（同上）
+
+【構成的ミスリード】
+  → 景品表示法第5条第1号（同上）
+  → 民法第709条（同上）
+
+【競合誘導バイアス】
+  → 不正競争防止法第2条第1項第21号（営業誹謗行為）：「競争関係にある他人の営業上の信用を害する虚偽の事実を告知し、又は流布する行為」
+  → 民法第709条（同上）
+
 【絶対禁止事項】
 - 記事に書かれていない内容を推測・補完しない
 - 法律上の最終結論（違法・合法の断定）はしない
 - 感情的・糾弾的な表現を使わない
 - テキスト内に存在しない文字列を引用しない
 - 同じ趣旨の指摘を言い換えで重複させない
+- 上記条文参照テーブル以外の法令・条番号を引用しない（ハルシネーション厳禁）
+- explanation・deletion_comment・legal_basis のいずれにも「A類型」「B類型」「G類型」等の類型記号・類型番号を絶対に書かない
+  → これらは社外に提出する文書に転用されるため、内部分類コードの混入は厳禁
+  → 問題の性質を説明する場合は「名誉毀損」「信用毀損」「虚偽の事実の流布」等、法令上の言葉か平易な日本語で表現すること
 
 【指摘しないもの・text引用禁止テキスト】
 - ナビゲーション・メニュー・パンくず・タグ・カテゴリ・コピーライト
@@ -403,7 +445,9 @@ def _build_analysis_prompt(
 - 同趣旨の指摘は統合する。ただし論点が独立しているならば必ず別指摘にする
 - 件数は問わない。記事の内容に応じて正直に出力する（多くても少なくても水増し・省略しない）
 - 「もう十分だろう」と途中で打ち切ることは禁止。最後の段落まで必ずスキャンを完了してから出力する
-- D類型（商標名を使った不正誘導）は必ず最初に指摘する
+- 「商標権侵害・ブランド毀損」（商標名を使った不正誘導）は必ず最初に指摘する
+- legal_basis は出力できる場合のみ記載する。条文参照テーブルに明確に対応する条文がない場合は legal_basis を空文字にしてよい
+  → legal_basis が空であることを理由に指摘を省略・弱めることは絶対禁止。法的根拠の有無にかかわらず問題表現はすべて指摘すること
 
 【指摘品質の基準】
 各指摘は必ず以下の4層構造で説明すること：
@@ -416,16 +460,27 @@ def _build_analysis_prompt(
 ① 検索誘導構造の確認
    - タイトル・URL・見出しに商標名・人名を使用して検索流入を得ているか
    - タイトルに名称があるだけでは不十分。「名称で検索→記事→別サービスへ流れる導線」の構造を確認する
-   - 確認できた場合：severity=5、D類型（検索誘導構造）として指摘
+   - 確認できた場合：severity=5、「商標権侵害・ブランド毀損（検索誘導構造）」として指摘
 
 ② 比較誹謗型コンテンツの確認
    - 対象を否定的に評価した上で、競合サービス・代替サービスを推奨しているか
    - 「〇〇より安全」「本当のおすすめ」等の比較誘導があれば非常に強い論点
-   - 確認できた場合：severity=5、D類型（比較誹謗型）またはH類型として指摘
+   - 確認できた場合：severity=5、「商標権侵害・ブランド毀損（比較誹謗型）」または「競合誘導バイアス」として指摘
 
 ③ ブランド毀損の確認
    - 記事全体の構成が対象ブランドへの信頼・社会的評価を継続的に破壊する内容になっていないか
    - 「評価記事・口コミ記事を装った組織的ブランド攻撃」に該当する場合は記事全体の問題として指摘
+
+【legal_basis の出力フォーマット（厳守）】
+legal_basis は必ず以下の2文構成で出力すること。条文参照テーブル外の条文引用は絶対禁止。
+
+1文目：「〔法令名〕第〔条番号〕に該当すると考える。」
+2文目：「同条には『〔条文の核心部分を正確に引用〕』と規定されており、『〔該当するtextの引用〕』といった表現は同条に該当する。」
+
+出力例：
+「刑法第230条第1項に該当すると考える。同条には『公然と事実を摘示し、人の名誉を毀損した者は、その事実の有無にかかわらず、三年以下の拘禁刑又は五十万円以下の罰金に処する』と規定されており、『〇〇は詐欺まがいの手口を使っている』といった表現は同条に該当する。」
+
+条文参照テーブルに明確に対応する条文がない場合のみ legal_basis を空文字にしてよい。その場合も指摘自体は省略しない。
 
 【出力の絶対ルール】
 - 純粋なJSONのみ返すこと。```json や ``` などのコードブロックは絶対に使わない
@@ -447,7 +502,8 @@ def _build_analysis_prompt(
       "severity": 問題の深刻度（1〜5の整数。5が最重要）,
       "confidence": "高／中／低（本文だけで問題性を説明できるか）",
       "reader_impression": "一般読者がこの表現から受ける印象（1文）",
-      "explanation": "問題の核心を50文字以内の1文で。冗長な前置き不要",
+      "explanation": "問題の核心を35文字以内の1文で。冗長な前置き不要",
+      "legal_basis": "○○法第○条○項に該当すると考える。同条には「○○（条文の核心部分）」と規定されており、「○○（記事の問題表現）」といった表現は同条に該当する。※条文テーブル外の条文は使わない。条文該当なしの場合のみ空文字",
       "deletion_comment": "削除申請転用向け指摘文案（1文・シンプルに）"
     }}
   ],
@@ -456,7 +512,7 @@ def _build_analysis_prompt(
     {{
       "rank": 1,
       "claim_title": "最強論点のタイトル（一言で）",
-      "legal_basis": "根拠法理（名誉毀損・信用毀損・業務妨害・商標権侵害　のいずれか。不正競争防止法は使わない）",
+      "legal_basis": "上記フォーマットに従い2文で出力（テーブル外の条文引用は絶対禁止）",
       "key_evidence": "記事内の具体的な根拠表現（原文引用）",
       "logic": "なぜこの表現が問題か。社会的評価の低下・公益性の欠如・真実相当性の否定・違法性阻却事由の不存在　の観点から因果関係を記述",
       "deletion_argument": "削除申請書に使える主張文（2〜3文で因果関係まで書く）"
@@ -857,6 +913,7 @@ def find_violation_positions(pdf_path: str, violations: list) -> list:
                         "confidence": v.get("confidence", "中"),
                         "reader_impression": v.get("reader_impression", ""),
                         "explanation": v.get("explanation", ""),
+                        "legal_basis": v.get("legal_basis", ""),
                         "deletion_comment": v.get("deletion_comment", ""),
                         "text": raw_text,
                     })
@@ -881,6 +938,7 @@ def find_violation_positions(pdf_path: str, violations: list) -> list:
                     "confidence": v.get("confidence", "中"),
                     "reader_impression": v.get("reader_impression", ""),
                     "explanation": v.get("explanation", ""),
+                    "legal_basis": v.get("legal_basis", ""),
                     "deletion_comment": v.get("deletion_comment", ""),
                     "text": raw_text,
                     "auto_placed": True,
@@ -905,8 +963,8 @@ def sort_and_renumber(violations: list) -> None:
         v["number"] = i + 1
 
 
-def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
-    """1件の違反を指定ページに描画する（赤枠＋注釈テキストボックス）。"""
+def _draw_violation_on_page(page: fitz.Page, item: dict, font_path, occupied: list = None) -> None:
+    """1件の違反を指定ページに描画する（赤枠＋注釈テキストボックス）。occupied に既配置ボックスを渡すと重複回避する。"""
     r = item["rect"]
     rect = fitz.Rect(r[0], r[1], r[2], r[3]) if isinstance(r, (list, tuple)) else r
     # アルファベット記号・類型番号表記を除去（例: "D: "、"E類型"）
@@ -921,6 +979,7 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
     vtype = _TYPE_MAP.get(raw_type, raw_type)
     vtype = re.sub(r'^[A-H]:\s*', '', vtype)
     explanation = item.get("explanation", "")
+    legal_basis = item.get("legal_basis", "")
     pw, ph = page.rect.width, page.rect.height
 
     # ── 赤枠 ──
@@ -960,18 +1019,21 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
     else:
         box_w = 240.0
         exp_lines = max(2, (len(explanation) + 26) // 27)
-        box_h = float(min(max(16 + exp_lines * 13 + 10, 70), 160))
+        law_lines = max(0, (len(legal_basis) + 26) // 27) if legal_basis else 0
+        box_h = float(min(max(16 + (exp_lines + law_lines) * 13 + 14, 70), 220))
     chars = max(10, int(box_w / 8.5))
 
     ann_pos = item.get("annotation_pos")
     if ann_pos and len(ann_pos) == 2:
         ax, ay = float(ann_pos[0]), float(ann_pos[1])
     else:
-        ax, ay = auto_place_annotation(expanded, page.rect, box_w, box_h)
+        ax, ay = auto_place_annotation(expanded, page.rect, box_w, box_h, occupied=occupied)
 
     ax = max(0.0, min(ax, pw - box_w))
     ay = max(0.0, min(ay, ph - box_h))
     ann_rect = fitz.Rect(ax, ay, ax + box_w, ay + box_h)
+    if occupied is not None:
+        occupied.append(ann_rect)
     inner    = fitz.Rect(ax + 6, ay + 5, ax + box_w - 5, ay + box_h - 4)
 
     # ── 白背景ボックス ──
@@ -981,10 +1043,15 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
     label = f"【{num}】{vtype}" if num else vtype
     inserted = False
     if hasattr(page, "insert_htmlbox"):
+        law_html = (
+            f'<br><span style="font-size:8pt;color:#555555;font-style:italic;">{legal_basis}</span>'
+            if legal_basis else ""
+        )
         html = (
             f'<span style="font-size:10pt;font-weight:bold;color:#cc0000;">{label}</span>'
             f'<br>'
             f'<span style="font-size:9pt;color:#333333;">{explanation}</span>'
+            f'{law_html}'
         )
         try:
             page.insert_htmlbox(inner, html)
@@ -1002,6 +1069,12 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
                 page.insert_text(fitz.Point(ax + 6, ty), text[:chars],
                                  fontsize=9, color=(0.15, 0.15, 0.15), fontfile=font_path)
                 text, ty = text[chars:], ty + 13
+            if legal_basis and ty < ay + box_h - 5:
+                law_text = legal_basis
+                while law_text and ty < ay + box_h - 5:
+                    page.insert_text(fitz.Point(ax + 6, ty), law_text[:chars],
+                                     fontsize=8, color=(0.35, 0.35, 0.35), fontfile=font_path)
+                    law_text, ty = law_text[chars:], ty + 12
             inserted = True
         except Exception:
             pass
@@ -1012,6 +1085,9 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path) -> None:
                          fontsize=8, color=(0.75, 0, 0), fontname="Helv")
         page.insert_text(fitz.Point(ax + 4, ay + 25), explanation[:55],
                          fontsize=7, color=(0.15, 0.15, 0.15), fontname="Helv")
+        if legal_basis:
+            page.insert_text(fitz.Point(ax + 4, ay + 37), legal_basis[:60],
+                             fontsize=6, color=(0.35, 0.35, 0.35), fontname="Helv")
 
 
 def build_annotated_pdf(pdf_path: str, violations: list) -> fitz.Document:
@@ -1031,9 +1107,10 @@ def build_annotated_pdf(pdf_path: str, violations: list) -> fitz.Document:
             new_page = new_doc.new_page(width=pw, height=ph)
 
             # ① 赤枠＋注釈テキストを先に描画（これが最前面になる）
+            occupied_rects: list = []
             for item in violations:
                 if item.get("page_num") == page_num and item.get("rect"):
-                    _draw_violation_on_page(new_page, item, font_path)
+                    _draw_violation_on_page(new_page, item, font_path, occupied=occupied_rects)
 
             # ② グレースケール画像を背面に挿入（overlay=False = 既存の描画の後ろ）
             mat = fitz.Matrix(2, 2)
@@ -1049,24 +1126,49 @@ def build_annotated_pdf(pdf_path: str, violations: list) -> fitz.Document:
         orig_doc.close()
 
 
-def auto_place_annotation(expanded: fitz.Rect, page_rect: fitz.Rect, box_w: float, box_h: float, margin: float = 6) -> tuple:
-    """赤枠の近くで最もスペースのある位置を返す（下→右→左→上の優先順）。"""
+def auto_place_annotation(expanded: fitz.Rect, page_rect: fitz.Rect, box_w: float, box_h: float, margin: float = 6, occupied: list = None) -> tuple:
+    """赤枠の近くで最もスペースのある位置を返す（下→右→左→上の優先順）。occupied に既配置ボックスを渡すと重複回避する。"""
     pw, ph = page_rect.width, page_rect.height
     rx0, ry0, rx1, ry1 = expanded.x0, expanded.y0, expanded.x1, expanded.y1
-    # 下
-    if ry1 + box_h + margin <= ph:
-        return (max(0, min(rx0, pw - box_w)), ry1 + margin)
-    # 右
-    if rx1 + box_w + margin <= pw:
-        return (rx1 + margin, max(0, min(ry0, ph - box_h)))
-    # 左
-    if rx0 - box_w - margin >= 0:
-        return (rx0 - box_w - margin, max(0, min(ry0, ph - box_h)))
-    # 上
-    if ry0 - box_h - margin >= 0:
-        return (max(0, min(rx0, pw - box_w)), ry0 - box_h - margin)
-    # フォールバック（ページ下端）
-    return (max(0, min(rx0, pw - box_w)), max(0, ph - box_h - 5))
+
+    def clamp(ax, ay):
+        return (max(0.0, min(float(ax), pw - box_w)), max(0.0, min(float(ay), ph - box_h)))
+
+    def overlaps_any(ax, ay):
+        if not occupied:
+            return False
+        r = fitz.Rect(ax, ay, ax + box_w, ay + box_h)
+        return any(r.intersects(o) for o in occupied)
+
+    step = box_h + margin
+
+    # 候補を方向ごとに生成（各方向で最大5ステップずらして試みる）
+    candidates = []
+    for k in range(6):
+        cy = ry1 + margin + k * step
+        if cy + box_h <= ph:
+            candidates.append(clamp(rx0, cy))          # 下
+    for k in range(6):
+        cy = ry0 + k * step
+        if rx1 + box_w + margin <= pw and cy + box_h <= ph:
+            candidates.append(clamp(rx1 + margin, cy))  # 右
+    for k in range(6):
+        cy = ry0 + k * step
+        if rx0 - box_w - margin >= 0 and cy + box_h <= ph:
+            candidates.append(clamp(rx0 - box_w - margin, cy))  # 左
+    for k in range(6):
+        cy = ry0 - box_h - margin - k * step
+        if cy >= 0:
+            candidates.append(clamp(rx0, cy))           # 上
+
+    for pos in candidates:
+        if not overlaps_any(*pos):
+            return pos
+
+    # 全候補が重複する場合は最初の候補（下）を返す
+    if candidates:
+        return candidates[0]
+    return clamp(rx0, ph - box_h - 5)
 
 
 def _find_cjk_font() -> str | None:
