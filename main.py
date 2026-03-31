@@ -990,8 +990,9 @@ def _draw_violation_on_page(page: fitz.Page, item: dict, font_path, occupied: li
     raw_type = item.get("type", "")
     vtype = _TYPE_MAP.get(raw_type, raw_type)
     vtype = re.sub(r'^[A-H]:\s*', '', vtype)
-    explanation = item.get("explanation", "")
-    legal_basis = item.get("legal_basis", "")
+    # 注釈ボックスには deletion_comment（法律込みの2文）を優先表示
+    explanation = item.get("deletion_comment") or item.get("explanation", "")
+    legal_basis = ""  # deletion_commentに統合したため個別表示しない
     pw, ph = page.rect.width, page.rect.height
 
     # ── 赤枠 ──

@@ -1211,8 +1211,7 @@ function renderAnnotationLabels(pageIdx) {
     div.innerHTML = `
       <button class="ann-edit-btn" title="編集">✎</button>
       <div class="ann-title ann-title-display">【${v.number}】${escapeHtml(v.type)}</div>
-      <div class="ann-body ann-body-display">${escapeHtml(v.explanation)}</div>
-      ${v.legal_basis ? `<div class="ann-legal ann-legal-display">${escapeHtml(v.legal_basis)}</div>` : ''}
+      <div class="ann-body ann-body-display">${escapeHtml(v.deletion_comment || v.explanation)}</div>
       <div class="ann-edit-form">
         <input type="text" class="ann-type-input" value="${escapeHtml(v.type)}" placeholder="カテゴリ名">
         <textarea class="ann-exp-input" placeholder="指摘理由">${escapeHtml(v.explanation)}</textarea>
