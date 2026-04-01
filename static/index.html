@@ -1177,6 +1177,12 @@ function renderAnnotationLabels(pageIdx) {
   const scaleX = dispW / pi.pdfW;
   const scaleY = dispH / pi.pdfH;
 
+  // フォントサイズをscaleXで換算してCSSに反映（PDF表示倍率と一致させる）
+  const fontSize = parseInt(document.getElementById("annotation-font-size").value) || 9;
+  document.documentElement.style.setProperty("--ann-title-size", ((fontSize + 1) * scaleX) + "px");
+  document.documentElement.style.setProperty("--ann-body-size",  (fontSize * scaleX) + "px");
+  document.documentElement.style.setProperty("--ann-legal-size", ((fontSize - 1) * scaleX) + "px");
+
   // 注釈ボックスのPDF座標サイズ（Pythonのデフォルト値と一致させる）
   const boxWpdf = 240, boxHpdf = 70;
   const occupiedBoxes = []; // 既配置ボックス追跡（重複回避）
@@ -1911,12 +1917,9 @@ function loadHistoryItem(idx) {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-// 注釈フォントサイズのリアルタイムプレビュー
+// 注釈フォントサイズのリアルタイムプレビュー（scaleX換算で再描画）
 document.getElementById("annotation-font-size").addEventListener("input", function () {
-  const sz = parseInt(this.value) || 9;
-  document.documentElement.style.setProperty("--ann-title-size", (sz + 1) + "px");
-  document.documentElement.style.setProperty("--ann-body-size", sz + "px");
-  document.documentElement.style.setProperty("--ann-legal-size", (sz - 1) + "px");
+  editor.pages.forEach((_, idx) => renderAnnotationLabels(idx));
 });
 </script>
 
