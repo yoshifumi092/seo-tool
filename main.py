@@ -231,9 +231,11 @@ async def url_to_pdf(url: str, output_path: str, text_queue: asyncio.Queue = Non
         if text_queue:
             await text_queue.put(page_text)
 
+        # スクリーンCSSを使用（印刷用@media printでフォント拡大されるのを防ぐ）
+        await page.emulate_media(media="screen")
         await page.pdf(
             path=output_path,
-            format="A4",
+            width="1200px",
             print_background=True,
             margin={"top": "12mm", "bottom": "12mm", "left": "12mm", "right": "12mm"},
         )
