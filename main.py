@@ -235,7 +235,7 @@ async def url_to_pdf(url: str, output_path: str, text_queue: asyncio.Queue = Non
         await page.emulate_media(media="screen")
         await page.pdf(
             path=output_path,
-            width="1200px",
+            format="A4",
             print_background=True,
             margin={"top": "12mm", "bottom": "12mm", "left": "12mm", "right": "12mm"},
         )
